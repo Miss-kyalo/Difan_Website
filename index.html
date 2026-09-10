@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Difan Logistics | Enterprise Fleet & Telematics Platform</title>
+    <title>Difan Logistics | Fleet Telematics & Enterprise Portal</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-    <!-- SITE HEADER -->
+    <!-- GLOBAL HEADER -->
     <header class="site-header">
         <div class="header-top">
             <div class="nav-container">
@@ -22,320 +22,525 @@
 
             <div class="header-right">
                 <div class="language-picker">
-                    <select id="language-select">
+                    <select id="language-select" aria-label="Select Language">
                         <option value="">Choose language</option>
-                        
-                        <optgroup label="National & Regional (East Africa)">
-                            <option value="sw" data-type="google">Kiswahili</option>
-                            <option value="en" data-type="google" selected>English</option>
+                        <optgroup label="National & Regional">
+                            <option value="sw">Kiswahili</option>
+                            <option value="en" selected>English</option>
                         </optgroup>
-
-                        <optgroup label="Global Languages (Google)">
-                            <option value="fr" data-type="google">Français (French)</option>
-                            <option value="zh" data-type="google">中文 (Mandarin Chinese)</option>
-                            <option value="ar" data-type="google">العربية (Arabic)</option>
-                            <option value="es" data-type="google">Español (Spanish)</option>
-                            <option value="pt" data-type="google">Português (Portuguese)</option>
-                            <option value="de" data-type="google">Deutsch (German)</option>
-                            <option value="hi" data-type="google">हिन्दी (Hindi)</option>
-                        </optgroup>
-
-                        <optgroup label="Kenyan Local Languages (Ntealan)">
-                            <option value="kam" data-type="ntealan">Kikamba (Kamba)</option>
-                            <option value="kik" data-type="ntealan">Gĩkũyũ (Kikuyu)</option>
-                            <option value="luo" data-type="ntealan">Dholuo (Luo)</option>
-                            <option value="luy" data-type="ntealan">Luluhya (Luhya)</option>
-                            <option value="guz" data-type="ntealan">Ekegusii (Kisii)</option>
-                            <option value="kln" data-type="ntealan">Kalenjin</option>
-                            <option value="mer" data-type="ntealan">Kĩmĩĩrũ (Meru)</option>
-                            <option value="mas" data-type="ntealan">Maa (Maasai)</option>
-                            <option value="tuv" data-type="ntealan">Ng'aturkana (Turkana)</option>
-                            <option value="dav" data-type="ntealan">Kidawida (Taita)</option>
+                        <optgroup label="Global Languages">
+                            <option value="fr">Français (French)</option>
+                            <option value="zh">中文 (Mandarin Chinese)</option>
                         </optgroup>
                     </select>
                 </div>
-                <span id="user-display" class="user-badge">Client Portal: Bamburi Cement</span>
+                <span id="user-display" class="user-badge">Customer: Bamburi Cement</span>
             </div>
         </div>
     </header>
 
-    <!-- LIVE TELEMATICS NOTIFICATION BANNER -->
-    <div class="notification-banner" id="sys-notification">
-        <span><strong>BREAKDOWN ALERT:</strong> Truck KDA-8821 engine overheated at Salama Corridor. Relief vehicle dispatched. ETA delay: +45 mins.</span>
-        <button id="close-notification-btn">&times;</button>
+    <!-- LIVE TELEMATICS ALERT BANNER -->
+    <div class="notification-banner" id="sys-notification" role="alert">
+        <span><strong>FLEET ALERT:</strong> Truck KDA-8821 engine overheated at Salama Corridor. Relief vehicle dispatched. ETA delay: +45 mins.</span>
+        <button id="close-notification-btn" aria-label="Close notification">&times;</button>
     </div>
 
-    <!-- MAIN PORTAL CONTAINER -->
-    <div class="portal-wrapper">
+    <!-- MAIN PORTAL WRAPPER -->
+    <main class="portal-wrapper">
 
-        <!-- DASHBOARD ROLE CONTROL BAR -->
+        <!-- PORTAL ACCESS CONTROLLER -->
         <div class="control-bar">
             <div class="role-switch">
-                <span>ACTIVE VIEW:</span>
-                <button class="role-btn active" id="btn-role-client">Client Portal</button>
-                <button class="role-btn" id="btn-role-admin">Admin / Dispatcher Portal</button>
+                <span>PORTAL MODE:</span>
+                <button class="role-btn active" id="btn-role-client">Customer Portal</button>
+                <button class="role-btn" id="btn-role-admin">Company Employee Portal</button>
             </div>
 
-            <!-- CLIENT TABS -->
+            <!-- CUSTOMER PORTAL NAVIGATION -->
             <div class="tab-group" id="client-tabs">
-                <button class="tab-btn active" data-tab="tab-track" data-group="client">Live Tracking</button>
-                <button class="tab-btn" data-tab="tab-uber-booking" data-group="client">Request Truck</button>
-                <button class="tab-btn" data-tab="tab-billing" data-group="client">Payments & Invoices</button>
-                <button class="tab-btn" data-tab="tab-history" data-group="client">History & Credibility</button>
+                <button class="tab-btn active" data-tab="tab-track" data-group="client">Track Active Load</button>
+                <button class="tab-btn" data-tab="tab-uber-booking" data-group="client">Book Fleet & Quote</button>
+                <button class="tab-btn" data-tab="tab-billing" data-group="client">Invoices & Payments</button>
+                <button class="tab-btn" data-tab="tab-history" data-group="client">Account Rating</button>
             </div>
 
-            <!-- ADMIN TABS -->
+            <!-- COMPANY EMPLOYEE NAVIGATION -->
             <div class="tab-group" id="admin-tabs" style="display:none;">
-                <button class="tab-btn active" data-tab="tab-admin-dispatch" data-group="admin">Dispatch & Fleet</button>
-                <button class="tab-btn" data-tab="tab-admin-geofence" data-group="admin">Geofencing & Dwell</button>
-                <button class="tab-btn" data-tab="tab-admin-accounts" data-group="admin">Accounts & Passwords</button>
+                <button class="tab-btn active" data-tab="tab-admin-hr" data-group="admin">HR, Roster & Payroll</button>
+                <button class="tab-btn" data-tab="tab-admin-pod" data-group="admin">POD & Document Control</button>
+                <button class="tab-btn" data-tab="tab-admin-dispatch" data-group="admin">Dispatch & Fleet Ops</button>
+                <button class="tab-btn" data-tab="tab-admin-accounts" data-group="admin">Customer Onboarding</button>
             </div>
         </div>
 
-        <!-- ================= CLIENT PANELS ================= -->
+        <!-- 1. CUSTOMER PORTAL PANELS -->
+        <div id="client-panels">
 
-        <!-- TRACKING PANEL -->
-        <div id="tab-track" class="panel active">
-            <div class="grid-2">
+            <!-- CUSTOMER: TRACKING -->
+            <section id="tab-track" class="panel active">
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>Live Freight Telematics</h2>
+                            <span class="badge badge-warning">In Transit</span>
+                        </div>
+
+                        <form id="track-form" class="form-row">
+                            <input type="text" id="track-input" value="DL-8801" placeholder="Enter Delivery No." style="flex:2;" aria-label="Delivery Number">
+                            <button type="submit" class="btn btn-primary">Track Load</button>
+                        </form>
+
+                        <div class="telematics-box">
+                            <p><strong>Delivery Ref:</strong> DL-8801 | <strong>Cargo:</strong> 28 Tonnes Cement</p>
+                            <p><strong>Status:</strong> <span class="danger-text">Engine Malfunction Reported</span></p>
+                            <p><strong>Relief Vehicle:</strong> Truck KDG-102K assigned & swapping container.</p>
+                        </div>
+
+                        <div class="stat-box">
+                            <label>Uploaded Delivery Note / POD</label>
+                            <div id="client-pod-view" style="margin-top:0.5rem; font-weight: 600; color: var(--primary);">
+                                📄 POD-8801-Signed.pdf (Available to Download)
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CUSTOMER: POD & REJECTION SUBMISSION -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Delivery Receipt & Cargo Discrepancy</h3>
+                        </div>
+                        <form id="condition-form">
+                            <div class="form-group">
+                                <label for="condition-status">Cargo Acceptance Status</label>
+                                <select id="condition-status">
+                                    <option value="good">100% Intact & Delivered</option>
+                                    <option value="partial_reject">Partial Cargo Damage / Rejection</option>
+                                    <option value="full_reject">Total Rejection</option>
+                                </select>
+                            </div>
+
+                            <div id="reject-fields" style="display:none;">
+                                <div class="form-group">
+                                    <label for="reject-qty">Quantity Rejected (Tonnes)</label>
+                                    <input type="number" id="reject-qty" placeholder="e.g. 3.5">
+                                </div>
+                                <div class="form-group">
+                                    <label for="reject-proof">Upload Photo Evidence</label>
+                                    <input type="file" id="reject-proof" multiple accept="image/*">
+                                </div>
+                                <div class="form-group">
+                                    <label for="reject-reason">Reason for Rejection</label>
+                                    <textarea id="reject-reason" rows="2" placeholder="State cargo condition..."></textarea>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-danger full-width">Submit Delivery Report</button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- CUSTOMER: BOOKING -->
+            <section id="tab-uber-booking" class="panel">
                 <div class="card">
                     <div class="card-header">
-                        <h2>Shipment Telematics & Status Tracker</h2>
-                        <span class="badge badge-warning">In Transit</span>
+                        <h2>On-Demand Fleet Dispatch Engine</h2>
+                        <span class="badge badge-info">50/50 Payment Terms</span>
                     </div>
 
-                    <form id="track-form" class="form-row">
-                        <input type="text" id="track-input" value="DL-8801" placeholder="Enter Delivery No." style="flex:2;">
-                        <button type="submit" class="btn btn-primary">Track Shipment</button>
+                    <form id="uber-booking-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="pickup-loc">Pickup Origin Location</label>
+                                <input type="text" id="pickup-loc" value="Athi River Industrial Zone" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="dropoff-loc">Destination</label>
+                                <input type="text" id="dropoff-loc" placeholder="e.g. Eldoret Depot" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="tonnage-select">Capacity Required</label>
+                                <select id="tonnage-select">
+                                    <option value="15">15 Tonnes Rigid Truck</option>
+                                    <option value="28" selected>28 Tonnes Articulated Flatbed</option>
+                                    <option value="30">30 Tonnes Multi-Axle Truck</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="urgency-select">Priority / Urgency</label>
+                                <select id="urgency-select">
+                                    <option value="standard">Standard Dispatch</option>
+                                    <option value="express">Express Dispatch (+15% Rate)</option>
+                                    <option value="critical">Critical Priority (+30% Rate)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">Calculate Instant Fare</button>
                     </form>
 
-                    <div class="telematics-box">
-                        <p><strong>Delivery Ref:</strong> DL-8801 | <strong>Cargo:</strong> 28 Tonnes Cement</p>
-                        <p><strong>Status:</strong> <span class="danger-text">Engine Malfunction Reported</span></p>
-                        <p><strong>Relief Vehicle:</strong> Truck KDG-102K assigned & swapping container.</p>
-                    </div>
-
-                    <div class="geofence-grid">
-                        <div class="stat-box">
-                            <label>Loading Zone Dwell Time</label>
-                            <h3 class="success-text">01h 12m</h3>
-                            <small>Max: 02h 00m</small>
-                        </div>
-                        <div class="stat-box">
-                            <label>Offloading Zone Dwell Time</label>
-                            <h3 class="warning-text">Pending Entry</h3>
-                            <small>Geofence: Kisumu Warehouse</small>
+                    <div id="booking-quote-box" style="display:none;" class="quote-box">
+                        <h3>Upfront Fare Quote Generated</h3>
+                        <p>Total Estimated Freight Cost: <strong id="total-quote">KES 240,000.00</strong></p>
+                        <div class="quote-split">
+                            <div class="quote-card">
+                                <span class="badge badge-warning">50% Commitment Due Now</span>
+                                <h4 id="deposit-val">KES 120,000.00</h4>
+                                <button class="btn btn-success full-width pay-btn">Pay Commitment Deposit</button>
+                            </div>
+                            <div class="quote-card">
+                                <span class="badge badge-info">50% Balance (Upon POD)</span>
+                                <h4 id="balance-val">KES 120,000.00</h4>
+                                <button class="btn btn-secondary full-width" disabled>Locked Until Offloaded</button>
+                            </div>
                         </div>
                     </div>
                 </div>
+            </section>
 
-                <!-- CARGO REJECTION / DISCREPANCY -->
+            <!-- CUSTOMER: BILLING -->
+            <section id="tab-billing" class="panel">
                 <div class="card">
                     <div class="card-header">
-                        <h3>Delivery Confirmation & POD</h3>
+                        <h2>Billing & Payment Ledger</h2>
                     </div>
-                    <form id="condition-form">
-                        <div class="form-group">
-                            <label>Cargo Condition Status</label>
-                            <select id="condition-status">
-                                <option value="good">100% Intact & Accepted</option>
-                                <option value="partial_reject">Partial Rejection / Damage</option>
-                                <option value="full_reject">Total Rejection</option>
-                            </select>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Invoice Ref</th>
+                                <th>Total Cost</th>
+                                <th>50% Deposit</th>
+                                <th>50% Balance</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>INV-2026-091</td>
+                                <td>KES 310,000.00</td>
+                                <td class="success-text">&#10004; KES 155,000 Paid</td>
+                                <td class="danger-text">KES 155,000 Pending</td>
+                                <td><span class="badge badge-warning">Awaiting Offload</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- CUSTOMER: CREDIBILITY -->
+            <section id="tab-history" class="panel">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Customer Credibility Rating</h2>
+                    </div>
+                    <div class="credibility-wrapper">
+                        <div class="credibility-score">98 / 100</div>
+                        <div>
+                            <p><strong>Payment Speed:</strong> Avg 1.2 Days (Prompt)</p>
+                            <p><strong>Tier Status:</strong> Premium Credit Approved (0% Deposit Emergency Dispatch Allowed).</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+
+        <!-- 2. COMPANY EMPLOYEE PORTAL PANELS -->
+        <div id="admin-panels">
+
+            <!-- EMPLOYEE: HR, ROSTER & PAYROLL -->
+            <section id="tab-admin-hr" class="panel">
+                
+                <!-- TOP DRIVER PERFORMANCE LEADERBOARD -->
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-header">
+                        <h2>🏆 Top Performing Drivers (Trip Leaderboard)</h2>
+                        <span class="badge badge-info">Monthly Fleet Metrics</span>
+                    </div>
+                    <div class="leaderboard-grid" id="leaderboard-container">
+                        <!-- Dynamically populated by js/hr.js -->
+                    </div>
+                </div>
+
+                <!-- STAFF & DRIVER DIRECTORY / ROSTER STATUS -->
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-header">
+                        <h2>👥 Employee & Fleet Duty Roster</h2>
+                        <div class="roster-legend">
+                            <span>🟢 Active / On Duty</span>
+                            <span>🟠 On Approved Leave</span>
+                            <span>🔴 Maintenance / Off Duty</span>
+                        </div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Duty Status</th>
+                                <th>Employee Name</th>
+                                <th>Role</th>
+                                <th>Assigned Truck Reg</th>
+                                <th>Phone Contact</th>
+                                <th>Roster Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roster-rows">
+                            <!-- Dynamically populated by js/hr.js -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- DRIVER PAYROLL, STATUTORY DEDUCTIONS & NET PAY SUMMARY -->
+                <div class="card">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h2>💵 Driver Payroll & Statutory Deductions Ledger</h2>
+                            <p style="font-size:0.85rem; color: var(--text-muted);">Includes Base Pay, Trip Bonuses, Docked Pay, Statutory Taxes (NSSF, SHIF, Housing Levy, PAYE, NITA), and Expected Net Pay.</p>
+                        </div>
+                        <button class="btn btn-success" id="btn-batch-payroll">Process Batch Payroll</button>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Driver Name</th>
+                                    <th>Base Pay</th>
+                                    <th>Bonuses & Reason</th>
+                                    <th>Docked Pay & Reason</th>
+                                    <th>Gross Pay</th>
+                                    <th>NSSF</th>
+                                    <th>SHIF</th>
+                                    <th>Housing Levy</th>
+                                    <th>PAYE</th>
+                                    <th>NITA (Employer)</th>
+                                    <th>Total Stat. Deductions</th>
+                                    <th>Expected Net Pay</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hr-payroll-rows">
+                                <!-- Dynamically populated by js/hr.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- EMPLOYEE: TRIP DOCUMENT CONTROL (DELIVERY NOTE & POD) -->
+            <section id="tab-admin-pod" class="panel">
+                <div class="grid-2" style="margin-bottom: 1.5rem;">
+                    
+                    <!-- 1. TRIP START: ISSUE DELIVERY NOTE WITH OCR AUTO-FILL -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>🚀 Trip Start: Delivery Note (Waybill)</h2>
+                            <span class="badge badge-info">Dispatch Clearance</span>
                         </div>
 
-                        <div id="reject-fields" style="display:none;">
-                            <div class="form-group">
-                                <label>Quantity Rejected/Returned (Tonnes)</label>
-                                <input type="number" placeholder="e.g. 4">
-                            </div>
-                            <div class="form-group">
-                                <label>Upload Proof Pictures</label>
-                                <input type="file" multiple accept="image/*">
-                            </div>
-                            <div class="form-group">
-                                <label>Rejection Reason</label>
-                                <textarea rows="2" placeholder="Describe damage..."></textarea>
-                            </div>
+                        <!-- OCR UPLOAD FIELD -->
+                        <div class="form-group" style="margin-bottom: 1rem; background: var(--bg-surface, #f8f9fa); padding: 1rem; border-radius: 8px; border: 1px dashed var(--border-color, #ccc);">
+                            <label for="dn-ocr-file" style="font-weight: 600; display: block;">📷 Upload Scanned Delivery Note (OCR Auto-Fill)</label>
+                            <input type="file" id="dn-ocr-file" accept="image/*,.pdf" style="margin-top: 0.5rem;">
+                            <small id="ocr-status" style="display: block; margin-top: 0.5rem; color: var(--primary, #0056b3); font-weight: 500;"></small>
                         </div>
 
-                        <button type="submit" class="btn btn-danger full-width">Submit Report</button>
+                        <form id="delivery-note-form">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="dn-ref">Delivery Note Ref No.</label>
+                                    <input type="text" id="dn-ref" value="DN-2026-8801">
+                                </div>
+                                <div class="form-group">
+                                    <label for="dn-customer">Customer Account Name</label>
+                                    <input type="text" id="dn-customer" value="Bamburi Cement" required>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="dn-origin">Origin / Loading Point</label>
+                                    <input type="text" id="dn-origin" value="Athi River Plant" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="dn-destination">Destination / Offload Point</label>
+                                    <input type="text" id="dn-destination" value="Kisumu Depot" required>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="dn-cargo">Cargo Specifications</label>
+                                    <input type="text" id="dn-cargo" value="28 Tonnes - Ordinary Portland Cement" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="dn-truck">Assigned Truck & Driver</label>
+                                    <input type="text" id="dn-truck" value="KCB-402L (Peter Ochieng)" readonly>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary full-width">Issue & Print Delivery Note</button>
+                        </form>
+                    </div>
+
+                    <!-- 2. TRIP END: UPLOAD SIGNED POD -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h2>🏁 Trip End: Signed Proof of Delivery (POD)</h2>
+                            <span class="badge badge-warning">Awaiting Offload Sign-off</span>
+                        </div>
+                        <form id="pod-upload-form">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="pod-delivery-no">Trip Ref / Delivery Note No.</label>
+                                    <input type="text" id="pod-delivery-no" value="DN-2026-8801" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="pod-receiver">Recipient Signature / Stamp By</label>
+                                    <input type="text" id="pod-receiver" placeholder="e.g. Site Supervisor John" required>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="pod-file">Upload Scanned/Photo Signed POD Document</label>
+                                <input type="file" id="pod-file" accept=".pdf,.png,.jpg,.jpeg" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="pod-status">Cargo Condition at Offload</label>
+                                <select id="pod-status">
+                                    <option value="Accepted Intact">100% Delivered Intact</option>
+                                    <option value="Partial Damage">Partial Damage / Quantity Shortage</option>
+                                    <option value="Rejected">Rejected by Customer</option>
+                                </select>
+                            </div>
+
+                            <button type="submit" class="btn btn-success full-width">Upload & Sync POD to Customer Portal</button>
+                        </form>
+                    </div>
+
+                </div>
+
+                <!-- DOCUMENT LEDGER TABLE -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📋 Active Waybills & Completed POD Ledger</h2>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Trip Ref</th>
+                                    <th>Customer</th>
+                                    <th>Route</th>
+                                    <th>Trip Start (Delivery Note)</th>
+                                    <th>Trip End (POD Upload)</th>
+                                    <th>Cargo Condition</th>
+                                    <th>Document Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pod-history-table">
+                                <tr>
+                                    <td>DN-2026-8801</td>
+                                    <td>Bamburi Cement</td>
+                                    <td>Athi River ➔ Kisumu</td>
+                                    <td>Issued (2026-09-10 08:00)</td>
+                                    <td>Uploaded (2026-09-10 14:10)</td>
+                                    <td><span class="badge badge-success">Accepted Intact</span></td>
+                                    <td><button class="btn btn-secondary">Download POD</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- EMPLOYEE: DISPATCH CONTROL -->
+            <section id="tab-admin-dispatch" class="panel">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Fleet Operations & Breakdown Control</h2>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Truck No.</th>
+                                <th>Driver Name</th>
+                                <th>Operational Status</th>
+                                <th>Employee Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>KDA-8821</td>
+                                <td>John Mwangi</td>
+                                <td><span class="badge badge-danger">Engine Overheat Alert</span></td>
+                                <td><button class="btn btn-primary alert-action-btn">Dispatch Relief Vehicle</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- EMPLOYEE: CUSTOMER ONBOARDING -->
+            <section id="tab-admin-accounts" class="panel">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Onboard New Customer Account</h2>
+                    </div>
+                    <form id="account-gen-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="acc-company">Customer Company Name</label>
+                                <input type="text" id="acc-company" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="acc-email">Customer Primary Email</label>
+                                <input type="email" id="acc-email" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success">Provision Account Access</button>
                     </form>
                 </div>
-            </div>
+            </section>
+
         </div>
 
-        <!-- UBER-STYLE DISPATCH PANEL -->
-        <div id="tab-uber-booking" class="panel">
-            <div class="card">
-                <div class="card-header">
-                    <h2>On-Demand Scheduled Truck Dispatch</h2>
-                    <span class="badge badge-info">50/50 Payment Engine</span>
-                </div>
+    </main>
 
-                <form id="uber-booking-form">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Pickup Location</label>
-                            <input type="text" value="Athi River Industrial Zone" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Drop-off Destination</label>
-                            <input type="text" placeholder="e.g. Eldoret Depot" required>
-                        </div>
-                    </div>
+    <!-- TOAST CONTAINER -->
+    <div id="toast-container" class="toast-container"></div>
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Capacity Tonnage</label>
-                            <select id="tonnage-select">
-                                <option value="15">15 Tonnes Rigid Truck</option>
-                                <option value="28" selected>28 Tonnes Articulated Flatbed</option>
-                                <option value="30">30 Tonnes Multi-Axle</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Urgency Level</label>
-                            <select id="urgency-select">
-                                <option value="standard">Standard Dispatch</option>
-                                <option value="express">Express Loading (+15%)</option>
-                                <option value="critical">Critical Emergency (+30%)</option>
-                            </select>
-                        </div>
-                    </div>
+    <!-- GLOBAL MOCK APP INITIALIZER -->
+    <script>
+        window.DifanApp = {
+            formatCurrency: function(amount) {
+                return 'KES ' + amount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            },
+            showToast: function(message) {
+                const container = document.getElementById('toast-container');
+                if (container) {
+                    const toast = document.createElement('div');
+                    toast.className = 'toast-message';
+                    toast.innerText = message;
+                    container.appendChild(toast);
+                    setTimeout(() => { toast.remove(); }, 3000);
+                }
+            }
+        };
+    </script>
 
-                    <button type="submit" class="btn btn-primary">Generate Quote</button>
-                </form>
+    <!-- TESSERACT.JS OCR LIBRARY CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
-                <div id="booking-quote-box" style="display:none;" class="quote-box">
-                    <h3>Upfront Booking Quote Generated</h3>
-                    <p>Total Estimated Freight Cost: <strong id="total-quote">$1,850.00</strong></p>
-                    <div class="quote-split">
-                        <div class="quote-card">
-                            <span class="badge badge-warning">50% Commitment Due Now</span>
-                            <h4 id="deposit-val">$925.00</h4>
-                            <button class="btn btn-success full-width pay-btn" data-type="50% Deposit">Pay $925 Deposit</button>
-                        </div>
-                        <div class="quote-card">
-                            <span class="badge badge-info">50% Final Balance</span>
-                            <h4 id="balance-val">$925.00</h4>
-                            <button class="btn btn-secondary full-width" disabled>Locked Until POD</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- PAYMENTS PANEL -->
-        <div id="tab-billing" class="panel">
-            <div class="card">
-                <div class="card-header">
-                    <h2>Financial Statements & Pending Invoices</h2>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Invoice #</th>
-                            <th>Total Amount</th>
-                            <th>50% Deposit</th>
-                            <th>50% Balance</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>INV-2026-091</td>
-                            <td>$2,400.00</td>
-                            <td class="success-text">&#10004; $1,200 Paid</td>
-                            <td class="danger-text">$1,200 Pending</td>
-                            <td><span class="badge badge-warning">Awaiting Offload</span></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- HISTORY & CREDIBILITY PANEL -->
-        <div id="tab-history" class="panel">
-            <div class="card">
-                <div class="card-header">
-                    <h2>Client Credibility Rating</h2>
-                </div>
-                <div class="credibility-wrapper">
-                    <div class="credibility-score">98 / 100</div>
-                    <div>
-                        <p><strong>Payment Speed:</strong> 1.2 Days Avg (Prompt)</p>
-                        <p><strong>Credit Benefit:</strong> Eligible for 0% Upfront Emergency Fleet Dispatch.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ================= ADMIN PANELS ================= -->
-
-        <!-- ADMIN DISPATCH -->
-        <div id="tab-admin-dispatch" class="panel">
-            <div class="card">
-                <div class="card-header">
-                    <h2>Fleet Command & Breakdown Control</h2>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Truck No.</th>
-                            <th>Driver</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>KDA-8821</td>
-                            <td>John Mwangi</td>
-                            <td><span class="badge badge-danger">Engine Breakdown</span></td>
-                            <td><button class="btn btn-primary alert-action-btn">Dispatch Relief</button></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- ADMIN GEOFENCING -->
-        <div id="tab-admin-geofence" class="panel">
-            <div class="card">
-                <div class="card-header">
-                    <h2>Automated Geofence Telematics</h2>
-                </div>
-                <p>Tracking time spent inside loading and offloading zones.</p>
-            </div>
-        </div>
-
-        <!-- ADMIN ACCOUNTS -->
-        <div id="tab-admin-accounts" class="panel">
-            <div class="card">
-                <div class="card-header">
-                    <h2>Provision Corporate Account</h2>
-                </div>
-                <form id="account-gen-form">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Company Legal Name</label>
-                            <input type="text" id="acc-company" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Corporate Email</label>
-                            <input type="email" id="acc-email" required>
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-success">Provision Account</button>
-                </form>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- JAVASCRIPT MODULES -->
+    <!-- DEPENDENCY LOAD ORDER -->
     <script src="js/app.js"></script>
-    <script src="js/booking.js"></script>
+    <script src="js/script.js"></script>
     <script src="js/telematics.js"></script>
+    <script src="js/booking.js"></script>
+    <script src="js/hr.js"></script>
+    <script src="js/dispatch.js"></script>
 </body>
 </html>

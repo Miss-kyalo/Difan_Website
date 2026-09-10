@@ -1,33 +1,43 @@
-# backend/app.py
-from flask import Flask, request, jsonify #install missing dependancy
-import random
-import string
+import os
+from flask import Flask
+from flask_cors import CORS
+from backend.models.payroll import db
+from backend.routes.telematics import telematics_bp
 
-app = Flask(__name__)
-
-def generate_random_password(length=8):
-    characters = string.ascii_uppercase + string.digits
-    return 'DF-' + ''.join(random.choice(characters) for _ in range(length))
-
-@app.route('/api/provision-account', methods=['POST'])
-def provision_account():
-    data = request.get_json()
-    company_name = data.get('company_name')
-    email = data.get('email')
-
-    if not company_name or not email:
-        return jsonify({'error': 'Missing company or email'}), 400
-
-    temp_password = generate_random_password()
+def create_app():
+    # Initialize Flask app pointing to root path
+    app = Flask(__name__, instance_relative_config=True)
     
-    # Logic to send email via SMTP or SendGrid goes here
+    # Enable CORS to allow frontend communication across different ports (e.g., Live Server / Port 5000)
+    CORS(app)
+
+    # Configuration setup
+    app.config['SECRET_KEY'] = 'difan-logistics-secret-key-2026'
     
-    return jsonify({
-        'status': 'success',
-        'message': f'Account created for {company_name}',
-        'email': email,
-        'temp_password': temp_password
-    }), 201
+    # Ensure instance folder exists for SQLite database
+    db_path = os.path.join(app.instance_path, 'database.db')
+    os.makedirs(app.instance_path, exist_ok=True)
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    # Initialize SQLAlchemy with the app
+    db.init_app(app)
+
+    # Register Blueprints
+    app.register_blueprint(telematics_bp)
+
+    # Automatically create database tables if they don't exist yet
+    with app.app_context():
+        db.create_all()
+
+    @app.route('/')
+    def index():
+        return {"status": "success", "message": "DIFAN LOGISTICS (K) LTD Fleet & Telematics API is running."}
+
+    return app
 
 if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+    app = create_app()
+    # Runs the Flask development server on port 5000
+    app.run(host='0.0.0.0', port=5000, debug=True)

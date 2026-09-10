@@ -1,0 +1,33 @@
+:root {
+  /* Old Money Green Palette */
+  --color-om-green-primary: #1b3b2b;
+  --color-om-green-dark: #0f2318;
+  --color-om-green-light: #2c543f;
+  --color-om-gold: #c5a059;
+  --color-om-cream: #f9f6f0;
+  --color-om-text: #1f2923;
+  --color-om-border: #d4ceb8;
+}
+
+/* Example Utility Layout */
+body {
+  background-color: var(--color-om-cream);
+  color: var(--color-om-text);
+  font-family: 'Georgia', serif; /* Classic serif font pairs well with this aesthetic */
+}
+
+.btn-primary {
+  background-color: var(--color-om-green-primary);
+  color: var(--color-om-cream);
+  border: 1px solid var(--color-om-gold);
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-om-green-dark);
+  border-color: #d8b26e;
+}
