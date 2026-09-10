@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Difan Logistics | Enterprise Fleet & Telematics Platform</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <!-- SITE HEADER -->
+    <header class="site-header">
+        <div class="header-top">
+            <div class="nav-container">
+                <a href="#" class="brand-logo">Difan <span>Logistics</span></a>
+                <nav class="main-nav">
+                    <a href="#services">Services</a>
+                    <a href="#quote-calculator">Get a Quote</a>
+                    <a href="#tracking">Track Load</a>
+                </nav>
+            </div>
+
+            <div class="header-right">
+                <div class="language-picker">
+                    <select id="language-select">
+                        <option value="">Choose language</option>
+                        
+                        <optgroup label="National & Regional (East Africa)">
+                            <option value="sw" data-type="google">Kiswahili</option>
+                            <option value="en" data-type="google" selected>English</option>
+                        </optgroup>
+
+                        <optgroup label="Global Languages (Google)">
+                            <option value="fr" data-type="google">Français (French)</option>
+                            <option value="zh" data-type="google">中文 (Mandarin Chinese)</option>
+                            <option value="ar" data-type="google">العربية (Arabic)</option>
+                            <option value="es" data-type="google">Español (Spanish)</option>
+                            <option value="pt" data-type="google">Português (Portuguese)</option>
+                            <option value="de" data-type="google">Deutsch (German)</option>
+                            <option value="hi" data-type="google">हिन्दी (Hindi)</option>
+                        </optgroup>
+
+                        <optgroup label="Kenyan Local Languages (Ntealan)">
+                            <option value="kam" data-type="ntealan">Kikamba (Kamba)</option>
+                            <option value="kik" data-type="ntealan">Gĩkũyũ (Kikuyu)</option>
+                            <option value="luo" data-type="ntealan">Dholuo (Luo)</option>
+                            <option value="luy" data-type="ntealan">Luluhya (Luhya)</option>
+                            <option value="guz" data-type="ntealan">Ekegusii (Kisii)</option>
+                            <option value="kln" data-type="ntealan">Kalenjin</option>
+                            <option value="mer" data-type="ntealan">Kĩmĩĩrũ (Meru)</option>
+                            <option value="mas" data-type="ntealan">Maa (Maasai)</option>
+                            <option value="tuv" data-type="ntealan">Ng'aturkana (Turkana)</option>
+                            <option value="dav" data-type="ntealan">Kidawida (Taita)</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <span id="user-display" class="user-badge">Client Portal: Bamburi Cement</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- LIVE TELEMATICS NOTIFICATION BANNER -->
+    <div class="notification-banner" id="sys-notification">
+        <span><strong>BREAKDOWN ALERT:</strong> Truck KDA-8821 engine overheated at Salama Corridor. Relief vehicle dispatched. ETA delay: +45 mins.</span>
+        <button id="close-notification-btn">&times;</button>
+    </div>
+
+    <!-- MAIN PORTAL CONTAINER -->
+    <div class="portal-wrapper">
+
+        <!-- DASHBOARD ROLE CONTROL BAR -->
+        <div class="control-bar">
+            <div class="role-switch">
+                <span>ACTIVE VIEW:</span>
+                <button class="role-btn active" id="btn-role-client">Client Portal</button>
+                <button class="role-btn" id="btn-role-admin">Admin / Dispatcher Portal</button>
+            </div>
+
+            <!-- CLIENT TABS -->
+            <div class="tab-group" id="client-tabs">
+                <button class="tab-btn active" data-tab="tab-track" data-group="client">Live Tracking</button>
+                <button class="tab-btn" data-tab="tab-uber-booking" data-group="client">Request Truck</button>
+                <button class="tab-btn" data-tab="tab-billing" data-group="client">Payments & Invoices</button>
+                <button class="tab-btn" data-tab="tab-history" data-group="client">History & Credibility</button>
+            </div>
+
+            <!-- ADMIN TABS -->
+            <div class="tab-group" id="admin-tabs" style="display:none;">
+                <button class="tab-btn active" data-tab="tab-admin-dispatch" data-group="admin">Dispatch & Fleet</button>
+                <button class="tab-btn" data-tab="tab-admin-geofence" data-group="admin">Geofencing & Dwell</button>
+                <button class="tab-btn" data-tab="tab-admin-accounts" data-group="admin">Accounts & Passwords</button>
+            </div>
+        </div>
+
+        <!-- ================= CLIENT PANELS ================= -->
+
+        <!-- TRACKING PANEL -->
+        <div id="tab-track" class="panel active">
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Shipment Telematics & Status Tracker</h2>
+                        <span class="badge badge-warning">In Transit</span>
+                    </div>
+
+                    <form id="track-form" class="form-row">
+                        <input type="text" id="track-input" value="DL-8801" placeholder="Enter Delivery No." style="flex:2;">
+                        <button type="submit" class="btn btn-primary">Track Shipment</button>
+                    </form>
+
+                    <div class="telematics-box">
+                        <p><strong>Delivery Ref:</strong> DL-8801 | <strong>Cargo:</strong> 28 Tonnes Cement</p>
+                        <p><strong>Status:</strong> <span class="danger-text">Engine Malfunction Reported</span></p>
+                        <p><strong>Relief Vehicle:</strong> Truck KDG-102K assigned & swapping container.</p>
+                    </div>
+
+                    <div class="geofence-grid">
+                        <div class="stat-box">
+                            <label>Loading Zone Dwell Time</label>
+                            <h3 class="success-text">01h 12m</h3>
+                            <small>Max: 02h 00m</small>
+                        </div>
+                        <div class="stat-box">
+                            <label>Offloading Zone Dwell Time</label>
+                            <h3 class="warning-text">Pending Entry</h3>
+                            <small>Geofence: Kisumu Warehouse</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CARGO REJECTION / DISCREPANCY -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Delivery Confirmation & POD</h3>
+                    </div>
+                    <form id="condition-form">
+                        <div class="form-group">
+                            <label>Cargo Condition Status</label>
+                            <select id="condition-status">
+                                <option value="good">100% Intact & Accepted</option>
+                                <option value="partial_reject">Partial Rejection / Damage</option>
+                                <option value="full_reject">Total Rejection</option>
+                            </select>
+                        </div>
+
+                        <div id="reject-fields" style="display:none;">
+                            <div class="form-group">
+                                <label>Quantity Rejected/Returned (Tonnes)</label>
+                                <input type="number" placeholder="e.g. 4">
+                            </div>
+                            <div class="form-group">
+                                <label>Upload Proof Pictures</label>
+                                <input type="file" multiple accept="image/*">
+                            </div>
+                            <div class="form-group">
+                                <label>Rejection Reason</label>
+                                <textarea rows="2" placeholder="Describe damage..."></textarea>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-danger full-width">Submit Report</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- UBER-STYLE DISPATCH PANEL -->
+        <div id="tab-uber-booking" class="panel">
+            <div class="card">
+                <div class="card-header">
+                    <h2>On-Demand Scheduled Truck Dispatch</h2>
+                    <span class="badge badge-info">50/50 Payment Engine</span>
+                </div>
+
+                <form id="uber-booking-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Pickup Location</label>
+                            <input type="text" value="Athi River Industrial Zone" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Drop-off Destination</label>
+                            <input type="text" placeholder="e.g. Eldoret Depot" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Capacity Tonnage</label>
+                            <select id="tonnage-select">
+                                <option value="15">15 Tonnes Rigid Truck</option>
+                                <option value="28" selected>28 Tonnes Articulated Flatbed</option>
+                                <option value="30">30 Tonnes Multi-Axle</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Urgency Level</label>
+                            <select id="urgency-select">
+                                <option value="standard">Standard Dispatch</option>
+                                <option value="express">Express Loading (+15%)</option>
+                                <option value="critical">Critical Emergency (+30%)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Generate Quote</button>
+                </form>
+
+                <div id="booking-quote-box" style="display:none;" class="quote-box">
+                    <h3>Upfront Booking Quote Generated</h3>
+                    <p>Total Estimated Freight Cost: <strong id="total-quote">$1,850.00</strong></p>
+                    <div class="quote-split">
+                        <div class="quote-card">
+                            <span class="badge badge-warning">50% Commitment Due Now</span>
+                            <h4 id="deposit-val">$925.00</h4>
+                            <button class="btn btn-success full-width pay-btn" data-type="50% Deposit">Pay $925 Deposit</button>
+                        </div>
+                        <div class="quote-card">
+                            <span class="badge badge-info">50% Final Balance</span>
+                            <h4 id="balance-val">$925.00</h4>
+                            <button class="btn btn-secondary full-width" disabled>Locked Until POD</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAYMENTS PANEL -->
+        <div id="tab-billing" class="panel">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Financial Statements & Pending Invoices</h2>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Total Amount</th>
+                            <th>50% Deposit</th>
+                            <th>50% Balance</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>INV-2026-091</td>
+                            <td>$2,400.00</td>
+                            <td class="success-text">&#10004; $1,200 Paid</td>
+                            <td class="danger-text">$1,200 Pending</td>
+                            <td><span class="badge badge-warning">Awaiting Offload</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- HISTORY & CREDIBILITY PANEL -->
+        <div id="tab-history" class="panel">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Client Credibility Rating</h2>
+                </div>
+                <div class="credibility-wrapper">
+                    <div class="credibility-score">98 / 100</div>
+                    <div>
+                        <p><strong>Payment Speed:</strong> 1.2 Days Avg (Prompt)</p>
+                        <p><strong>Credit Benefit:</strong> Eligible for 0% Upfront Emergency Fleet Dispatch.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= ADMIN PANELS ================= -->
+
+        <!-- ADMIN DISPATCH -->
+        <div id="tab-admin-dispatch" class="panel">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Fleet Command & Breakdown Control</h2>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Truck No.</th>
+                            <th>Driver</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>KDA-8821</td>
+                            <td>John Mwangi</td>
+                            <td><span class="badge badge-danger">Engine Breakdown</span></td>
+                            <td><button class="btn btn-primary alert-action-btn">Dispatch Relief</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ADMIN GEOFENCING -->
+        <div id="tab-admin-geofence" class="panel">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Automated Geofence Telematics</h2>
+                </div>
+                <p>Tracking time spent inside loading and offloading zones.</p>
+            </div>
+        </div>
+
+        <!-- ADMIN ACCOUNTS -->
+        <div id="tab-admin-accounts" class="panel">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Provision Corporate Account</h2>
+                </div>
+                <form id="account-gen-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Company Legal Name</label>
+                            <input type="text" id="acc-company" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Corporate Email</label>
+                            <input type="email" id="acc-email" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success">Provision Account</button>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- JAVASCRIPT MODULES -->
+    <script src="js/app.js"></script>
+    <script src="js/booking.js"></script>
+    <script src="js/telematics.js"></script>
+</body>
+</html>
