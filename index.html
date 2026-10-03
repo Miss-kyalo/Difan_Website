@@ -1,546 +1,566 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Difan Logistics | Fleet Telematics & Enterprise Portal</title>
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DIFAN Logistics</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <style>
+      body { margin: 0; }
+      .login-shell {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #111827 0%, #0f172a 45%, #1b3b2b 100%);
+        padding: 24px;
+      }
+      .login-card {
+        width: min(100%, 440px);
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 18px;
+        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.28);
+        padding: 32px 28px;
+        color: #e2e8f0;
+      }
+      .login-card h1 {
+        margin: 0 0 8px;
+        font-size: 2.4rem;
+        text-align: center;
+        color: white;
+      }
+      .login-card h1 span { color: #60a5fa; }
+      .login-card p { color: #cbd5e1; text-align: center; }
+      .login-card form { margin-top: 26px; display: grid; gap: 16px; }
+      .login-field label {
+        display: block;
+        margin-bottom: 6px;
+        color: #cbd5e1;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .login-field input {
+        width: 100%;
+        padding: 12px 14px;
+        border: 1px solid #334155;
+        background: #0f172a;
+        border-radius: 10px;
+        color: white;
+        font-size: 15px;
+      }
+      .login-btn {
+        width: 100%;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 18px;
+        background: #2563eb;
+        color: white;
+        font-size: 15px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .login-btn:disabled { opacity: 0.7; cursor: wait; }
+      .login-error {
+        min-height: 20px;
+        color: #fca5a5;
+        font-size: 13px;
+        margin-top: 12px;
+      }
+      .login-note {
+        margin-top: 14px;
+        font-size: 12px;
+        color: #94a3b8;
+        text-align: center;
+      }
+      .tab-view { display: none; }
+      .tab-view.active { display: block; }
+      .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+      .badge-warning { background: #fff3cd; color: #856404; }
+      .panel { display: none; }
+      .panel.active { display: block; }
+      .muted { color: #5a6560; }
+      .page-shell { max-width: 1200px; margin: 32px auto; padding: 0 16px; }
+      .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+      .metric-card { background: white; border: 1px solid #d8d3c8; border-radius: 6px; padding: 22px; box-shadow: 0 4px 20px rgba(27, 59, 43, 0.05); }
+      .metric-card h4 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #5a6560; }
+      .metric-card .value { font-size: 2rem; font-weight: 700; color: #1c2421; }
+      .metric-card .tag { display: inline-block; font-size: 11px; padding: 4px 8px; border-radius: 999px; }
+      .tag.live { background: #d1fae5; color: #065f46; }
+      .tag.blue { background: #dbeafe; color: #1d4ed8; }
+      .tag.warn { background: #fef3c7; color: #92400e; }
+      .tag.danger { background: #fee2e2; color: #991b1b; }
+      .rounded-box { background: white; border: 1px solid #d8d3c8; border-radius: 6px; padding: 22px; box-shadow: 0 4px 20px rgba(27, 59, 43, 0.05); }
+      .table-grid { width: 100%; border-collapse: collapse; }
+      .table-grid th, .table-grid td { border-bottom: 1px solid #efefef; padding: 12px; text-align: left; }
+      .table-grid code { background: #f4f4f4; padding: 4px 6px; border-radius: 4px; }
+      .row-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+      .stack { display: grid; gap: 16px; }
+      .field { margin-bottom: 12px; }
+      .field label { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #5a6560; }
+      .field input, .field select, .field textarea { width: 100%; padding: 10px 12px; border: 1px solid #d8d3c8; border-radius: 4px; font: inherit; }
+      .field button, .btn { background: #1b3b2b; color: white; border: none; padding: 10px 18px; border-radius: 4px; cursor: pointer; }
+      .btn.alt { background: #c5a059; color: #1c2421; }
+      .quote-box { display: none; background: #e8f4fd; border: 1px solid #b8daff; padding: 1rem; border-radius: 6px; margin-top: 12px; }
+      .tracking-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      .tracking-status { padding: 12px 14px; border-left: 4px solid #c5a059; background: #fff8e8; color: #5a4827; }
+      .tracking-status[data-state="error"] { border-color: #b42318; background: #fef3f2; color: #912018; }
+      .tracking-status[data-state="success"] { border-color: #16805d; background: #ecfdf3; color: #126044; }
+      .tracking-value { margin: 6px 0 0; font-size: 1rem; font-weight: 700; color: #1c2421; overflow-wrap: anywhere; }
+      .shipment-map-section { margin-top: 20px; }
+      .shipment-map-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+      .shipment-map-heading h4 { margin: 0; color: #1c2421; }
+      .shipment-map-heading span, .shipment-map-note { color: #5a6560; font-size: 12px; }
+      .shipment-map { width: 100%; height: 360px; border: 1px solid #d8d3c8; border-radius: 6px; z-index: 0; }
+      .shipment-map-note { margin: 8px 0 0; }
+      @media (max-width: 900px) { .stat-grid, .row-2 { grid-template-columns: 1fr; } }
+      @media (max-width: 600px) { .tracking-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div id="login-screen" class="login-shell">
+      <div class="login-card">
+        <h1>Difan <span>Logistics</span></h1>
+        <p>Access fleet tracking and logistics management</p>
+        <div id="login-error" class="login-error"></div>
 
-    <!-- GLOBAL HEADER -->
-    <header class="site-header">
-        <div class="header-top">
-            <div class="nav-container">
-                <a href="#" class="brand-logo">Difan <span>Logistics</span></a>
-                <nav class="main-nav">
-                    <a href="#services">Services</a>
-                    <a href="#quote-calculator">Get a Quote</a>
-                    <a href="#tracking">Track Load</a>
-                </nav>
-            </div>
+        <form id="login-form">
+          <div class="login-field">
+            <label for="login-email">Email Address</label>
+            <input id="login-email" type="email" value="admin@difanlogistics.com" placeholder="admin@difanlogistics.com" required />
+          </div>
+          <div class="login-field">
+            <label for="login-password">Password</label>
+            <input id="login-password" type="password" value="AdminSecurePassword123!" placeholder="••••••••••••" required />
+          </div>
 
-            <div class="header-right">
-                <div class="language-picker">
-                    <select id="language-select" aria-label="Select Language">
-                        <option value="">Choose language</option>
-                        <optgroup label="National & Regional">
-                            <option value="sw">Kiswahili</option>
-                            <option value="en" selected>English</option>
-                        </optgroup>
-                        <optgroup label="Global Languages">
-                            <option value="fr">Français (French)</option>
-                            <option value="zh">中文 (Mandarin Chinese)</option>
-                        </optgroup>
-                    </select>
-                </div>
-                <span id="user-display" class="user-badge">Customer: Bamburi Cement</span>
-            </div>
-        </div>
-    </header>
+          <label style="display:flex; align-items:center; gap:10px; color:#cbd5e1; font-size:13px;">
+            <input id="remember-me" type="checkbox" />
+            Remember me and save password
+          </label>
 
-    <!-- LIVE TELEMATICS ALERT BANNER -->
-    <div class="notification-banner" id="sys-notification" role="alert">
-        <span><strong>FLEET ALERT:</strong> Truck KDA-8821 engine overheated at Salama Corridor. Relief vehicle dispatched. ETA delay: +45 mins.</span>
-        <button id="close-notification-btn" aria-label="Close notification">&times;</button>
+          <button id="login-submit" class="login-btn" type="submit">Sign In</button>
+        </form>
+
+        <div class="login-note">Demo admin account: admin@difanlogistics.com / AdminSecurePassword123!</div>
+      </div>
     </div>
 
-    <!-- MAIN PORTAL WRAPPER -->
-    <main class="portal-wrapper">
+    <div id="app-shell" style="display:none;">
+      <header class="site-header">
+        <div class="header-top">
+          <div class="brand-logo">Difan <span>Logistics</span></div>
+          <nav class="main-nav">
+            <a href="#" class="nav-link active" data-target-tab="dashboard">Dashboard</a>
+            <a href="#" class="nav-link" data-target-tab="booking">Booking</a>
+            <a href="#" class="nav-link" data-target-tab="tracking">Tracking</a>
+            <a href="#" class="nav-link" data-target-tab="fleet">Fleet</a>
+            <a href="#" class="nav-link" data-target-tab="finance">Finance</a>
+          </nav>
+          <div id="current-user-badge" class="user-badge">Mary Wambui (ACCOUNTANT)</div>
+        </div>
+      </header>
 
-        <!-- PORTAL ACCESS CONTROLLER -->
-        <div class="control-bar">
-            <div class="role-switch">
-                <span>PORTAL MODE:</span>
-                <button class="role-btn active" id="btn-role-client">Customer Portal</button>
-                <button class="role-btn" id="btn-role-admin">Company Employee Portal</button>
+      <div class="notification-banner">
+        <span>Fleet status: 14 active corridors, 1 unresolved breakdown alert.</span>
+        <button aria-label="Close banner">×</button>
+      </div>
+
+      <main class="page-shell">
+        <section class="control-bar">
+          <div class="role-switch">
+            <span>Role</span>
+            <select id="role-switcher-select" style="padding: 8px 12px; border-radius: 4px; border: 1px solid #d8d3c8; background: white;">
+              <option value="accountant">Accountant</option>
+              <option value="driver">Driver</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+
+          <div style="display:flex; gap:8px; align-items:center;">
+            <label for="global-search-input" class="muted" style="font-size: 12px; text-transform: uppercase; letter-spacing: .08em; font-weight:700;">Search</label>
+            <input id="global-search-input" type="text" placeholder="Search vehicles or routes" style="padding: 8px 12px; border-radius: 4px; border:1px solid #d8d3c8; min-width: 220px;" />
+          </div>
+        </section>
+
+        <div id="view-dashboard" class="tab-view active">
+          <div class="stat-grid">
+            <div class="metric-card">
+              <h4>Total Trailers</h4>
+              <div class="value" id="stat-total-trailers">18</div>
+              <span class="tag live">Live</span>
+            </div>
+            <div class="metric-card">
+              <h4>Active on Transit</h4>
+              <div class="value" id="stat-active-transit">14</div>
+              <span class="tag blue">Network</span>
+            </div>
+            <div class="metric-card">
+              <h4>In Maintenance</h4>
+              <div class="value" id="stat-maintenance">2</div>
+              <span class="tag warn">Service</span>
+            </div>
+            <div class="metric-card">
+              <h4>Yard Idle</h4>
+              <div class="value" id="stat-yard-idle">2</div>
+              <span class="tag danger">Review</span>
+            </div>
+          </div>
+
+          <div class="row-2">
+            <div class="rounded-box">
+              <div class="card-header">
+                <h3>Breakdown Control Queue</h3>
+              </div>
+              <table class="table-grid" style="margin-top: 12px;">
+                <thead>
+                  <tr>
+                    <th>Truck</th>
+                    <th>Driver</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="breakdown-control-rows">
+                  <tr>
+                    <td><code>KDA-8821</code></td>
+                    <td>John Mwangi</td>
+                    <td><span class="badge badge-warning">Engine Overheat Alert</span></td>
+                    <td><button class="btn alt" type="button">View Incident</button></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
-            <!-- CUSTOMER PORTAL NAVIGATION -->
-            <div class="tab-group" id="client-tabs">
-                <button class="tab-btn active" data-tab="tab-track" data-group="client">Track Active Load</button>
-                <button class="tab-btn" data-tab="tab-uber-booking" data-group="client">Book Fleet & Quote</button>
-                <button class="tab-btn" data-tab="tab-billing" data-group="client">Invoices & Payments</button>
-                <button class="tab-btn" data-tab="tab-history" data-group="client">Account Rating</button>
+            <div class="stack">
+              <div class="rounded-box">
+                <div class="card-header">
+                  <h3>Freight Corridor Summary</h3>
+                </div>
+                <form id="freight-calc-form">
+                  <div class="field">
+                    <label>Origin</label>
+                    <select id="calc-origin">
+                      <option>Athi River</option>
+                      <option>Mombasa</option>
+                      <option>Kisumu</option>
+                      <option>Malaba</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Destination</label>
+                    <select id="calc-destination">
+                      <option>Mombasa</option>
+                      <option>Kisumu</option>
+                      <option>Malaba</option>
+                      <option>Nakuru</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Tonnage</label>
+                    <input id="calc-tonnage" type="number" value="30" min="1" max="100" />
+                  </div>
+                  <button class="btn" type="submit">Calculate Quote</button>
+                </form>
+              </div>
+
+              <div class="rounded-box">
+                <div class="card-header">
+                  <h3>Portal Access</h3>
+                </div>
+                <div class="stack">
+                  <button class="btn alt" id="btn-role-client" type="button">Customer Portal</button>
+                  <button class="btn" id="btn-role-admin" type="button">Admin Portal</button>
+                  <div id="user-display">Customer Account: Bamburi Cement</div>
+                </div>
+              </div>
             </div>
+          </div>
+        </div>
 
-            <!-- COMPANY EMPLOYEE NAVIGATION -->
-            <div class="tab-group" id="admin-tabs" style="display:none;">
-                <button class="tab-btn active" data-tab="tab-admin-hr" data-group="admin">HR, Roster & Payroll</button>
-                <button class="tab-btn" data-tab="tab-admin-pod" data-group="admin">POD & Document Control</button>
-                <button class="tab-btn" data-tab="tab-admin-dispatch" data-group="admin">Dispatch & Fleet Ops</button>
-                <button class="tab-btn" data-tab="tab-admin-accounts" data-group="admin">Customer Onboarding</button>
+        <div id="view-booking" class="tab-view">
+          <div class="rounded-box">
+            <div class="card-header">
+              <h3>Quote Builder</h3>
             </div>
+            <form id="uber-booking-form">
+              <div class="row-2">
+                <div>
+                  <div class="field">
+                    <label>Tonnage</label>
+                    <select id="tonnage-select">
+                      <option value="15">15 tons</option>
+                      <option value="25">25 tons</option>
+                      <option value="30" selected>30 tons</option>
+                      <option value="40">40 tons</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Urgency</label>
+                    <select id="urgency-select">
+                      <option value="standard">Standard</option>
+                      <option value="express">Express</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <div class="field">
+                    <label>Booking Notes</label>
+                    <textarea rows="5" placeholder="Special handling instructions, customs requirements, pickup time..."></textarea>
+                  </div>
+                </div>
+              </div>
+              <button class="btn" type="submit">Generate Quote</button>
+              <div id="booking-quote-box" class="quote-box">
+                <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                  <div><strong>Total Quote</strong><p id="total-quote">KES 0.00</p></div>
+                  <div><strong>Deposit</strong><p id="deposit-val">KES 0.00</p></div>
+                  <div><strong>Balance</strong><p id="balance-val">KES 0.00</p></div>
+                </div>
+              </div>
+            </form>
+          </div>
         </div>
 
-        <!-- 1. CUSTOMER PORTAL PANELS -->
-        <div id="client-panels">
-
-            <!-- CUSTOMER: TRACKING -->
-            <section id="tab-track" class="panel active">
-                <div class="grid-2">
-                    <div class="card">
-                        <div class="card-header">
-                            <h2>Live Freight Telematics</h2>
-                            <span class="badge badge-warning">In Transit</span>
-                        </div>
-
-                        <form id="track-form" class="form-row">
-                            <input type="text" id="track-input" value="DL-8801" placeholder="Enter Delivery No." style="flex:2;" aria-label="Delivery Number">
-                            <button type="submit" class="btn btn-primary">Track Load</button>
-                        </form>
-
-                        <div class="telematics-box">
-                            <p><strong>Delivery Ref:</strong> DL-8801 | <strong>Cargo:</strong> 28 Tonnes Cement</p>
-                            <p><strong>Status:</strong> <span class="danger-text">Engine Malfunction Reported</span></p>
-                            <p><strong>Relief Vehicle:</strong> Truck KDG-102K assigned & swapping container.</p>
-                        </div>
-
-                        <div class="stat-box">
-                            <label>Uploaded Delivery Note / POD</label>
-                            <div id="client-pod-view" style="margin-top:0.5rem; font-weight: 600; color: var(--primary);">
-                                📄 POD-8801-Signed.pdf (Available to Download)
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- CUSTOMER: POD & REJECTION SUBMISSION -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h3>Delivery Receipt & Cargo Discrepancy</h3>
-                        </div>
-                        <form id="condition-form">
-                            <div class="form-group">
-                                <label for="condition-status">Cargo Acceptance Status</label>
-                                <select id="condition-status">
-                                    <option value="good">100% Intact & Delivered</option>
-                                    <option value="partial_reject">Partial Cargo Damage / Rejection</option>
-                                    <option value="full_reject">Total Rejection</option>
-                                </select>
-                            </div>
-
-                            <div id="reject-fields" style="display:none;">
-                                <div class="form-group">
-                                    <label for="reject-qty">Quantity Rejected (Tonnes)</label>
-                                    <input type="number" id="reject-qty" placeholder="e.g. 3.5">
-                                </div>
-                                <div class="form-group">
-                                    <label for="reject-proof">Upload Photo Evidence</label>
-                                    <input type="file" id="reject-proof" multiple accept="image/*">
-                                </div>
-                                <div class="form-group">
-                                    <label for="reject-reason">Reason for Rejection</label>
-                                    <textarea id="reject-reason" rows="2" placeholder="State cargo condition..."></textarea>
-                                </div>
-                            </div>
-
-                            <button type="submit" class="btn btn-danger full-width">Submit Delivery Report</button>
-                        </form>
-                    </div>
-                </div>
-            </section>
-
-            <!-- CUSTOMER: BOOKING -->
-            <section id="tab-uber-booking" class="panel">
-                <div class="card">
-                    <div class="card-header">
-                        <h2>On-Demand Fleet Dispatch Engine</h2>
-                        <span class="badge badge-info">50/50 Payment Terms</span>
-                    </div>
-
-                    <form id="uber-booking-form">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="pickup-loc">Pickup Origin Location</label>
-                                <input type="text" id="pickup-loc" value="Athi River Industrial Zone" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="dropoff-loc">Destination</label>
-                                <input type="text" id="dropoff-loc" placeholder="e.g. Eldoret Depot" required>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="tonnage-select">Capacity Required</label>
-                                <select id="tonnage-select">
-                                    <option value="15">15 Tonnes Rigid Truck</option>
-                                    <option value="28" selected>28 Tonnes Articulated Flatbed</option>
-                                    <option value="30">30 Tonnes Multi-Axle Truck</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="urgency-select">Priority / Urgency</label>
-                                <select id="urgency-select">
-                                    <option value="standard">Standard Dispatch</option>
-                                    <option value="express">Express Dispatch (+15% Rate)</option>
-                                    <option value="critical">Critical Priority (+30% Rate)</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <button type="submit" class="btn btn-primary">Calculate Instant Fare</button>
-                    </form>
-
-                    <div id="booking-quote-box" style="display:none;" class="quote-box">
-                        <h3>Upfront Fare Quote Generated</h3>
-                        <p>Total Estimated Freight Cost: <strong id="total-quote">KES 240,000.00</strong></p>
-                        <div class="quote-split">
-                            <div class="quote-card">
-                                <span class="badge badge-warning">50% Commitment Due Now</span>
-                                <h4 id="deposit-val">KES 120,000.00</h4>
-                                <button class="btn btn-success full-width pay-btn">Pay Commitment Deposit</button>
-                            </div>
-                            <div class="quote-card">
-                                <span class="badge badge-info">50% Balance (Upon POD)</span>
-                                <h4 id="balance-val">KES 120,000.00</h4>
-                                <button class="btn btn-secondary full-width" disabled>Locked Until Offloaded</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- CUSTOMER: BILLING -->
-            <section id="tab-billing" class="panel">
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Billing & Payment Ledger</h2>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Invoice Ref</th>
-                                <th>Total Cost</th>
-                                <th>50% Deposit</th>
-                                <th>50% Balance</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>INV-2026-091</td>
-                                <td>KES 310,000.00</td>
-                                <td class="success-text">&#10004; KES 155,000 Paid</td>
-                                <td class="danger-text">KES 155,000 Pending</td>
-                                <td><span class="badge badge-warning">Awaiting Offload</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- CUSTOMER: CREDIBILITY -->
-            <section id="tab-history" class="panel">
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Customer Credibility Rating</h2>
-                    </div>
-                    <div class="credibility-wrapper">
-                        <div class="credibility-score">98 / 100</div>
-                        <div>
-                            <p><strong>Payment Speed:</strong> Avg 1.2 Days (Prompt)</p>
-                            <p><strong>Tier Status:</strong> Premium Credit Approved (0% Deposit Emergency Dispatch Allowed).</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
+        <div id="view-fleet" class="tab-view">
+          <div class="rounded-box">
+            <div class="card-header">
+              <h3>Fleet Operations</h3>
+            </div>
+            <div id="client-tabs" style="display:flex; gap:8px; margin-bottom: 16px;">
+              <button type="button" class="tab-btn active" data-group="client" data-tab="fleet-overview">Overview</button>
+              <button type="button" class="tab-btn" data-group="client" data-tab="fleet-maintenance">Maintenance</button>
+            </div>
+            <div id="client-panels">
+              <div id="fleet-overview" class="panel active">
+                <p class="muted">Operations summary for active loads, relief assets, and route performance.</p>
+              </div>
+              <div id="fleet-maintenance" class="panel">
+                <p class="muted">Maintenance queue includes cooling system repairs and routine brake checks.</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- 2. COMPANY EMPLOYEE PORTAL PANELS -->
-        <div id="admin-panels">
-
-            <!-- EMPLOYEE: HR, ROSTER & PAYROLL -->
-            <section id="tab-admin-hr" class="panel">
-                
-                <!-- TOP DRIVER PERFORMANCE LEADERBOARD -->
-                <div class="card" style="margin-bottom: 1.5rem;">
-                    <div class="card-header">
-                        <h2>🏆 Top Performing Drivers (Trip Leaderboard)</h2>
-                        <span class="badge badge-info">Monthly Fleet Metrics</span>
-                    </div>
-                    <div class="leaderboard-grid" id="leaderboard-container">
-                        <!-- Dynamically populated by js/hr.js -->
-                    </div>
-                </div>
-
-                <!-- STAFF & DRIVER DIRECTORY / ROSTER STATUS -->
-                <div class="card" style="margin-bottom: 1.5rem;">
-                    <div class="card-header">
-                        <h2>👥 Employee & Fleet Duty Roster</h2>
-                        <div class="roster-legend">
-                            <span>🟢 Active / On Duty</span>
-                            <span>🟠 On Approved Leave</span>
-                            <span>🔴 Maintenance / Off Duty</span>
-                        </div>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Duty Status</th>
-                                <th>Employee Name</th>
-                                <th>Role</th>
-                                <th>Assigned Truck Reg</th>
-                                <th>Phone Contact</th>
-                                <th>Roster Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="roster-rows">
-                            <!-- Dynamically populated by js/hr.js -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- DRIVER PAYROLL, STATUTORY DEDUCTIONS & NET PAY SUMMARY -->
-                <div class="card">
-                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <h2>💵 Driver Payroll & Statutory Deductions Ledger</h2>
-                            <p style="font-size:0.85rem; color: var(--text-muted);">Includes Base Pay, Trip Bonuses, Docked Pay, Statutory Taxes (NSSF, SHIF, Housing Levy, PAYE, NITA), and Expected Net Pay.</p>
-                        </div>
-                        <button class="btn btn-success" id="btn-batch-payroll">Process Batch Payroll</button>
-                    </div>
-                    <div style="overflow-x: auto;">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Driver Name</th>
-                                    <th>Base Pay</th>
-                                    <th>Bonuses & Reason</th>
-                                    <th>Docked Pay & Reason</th>
-                                    <th>Gross Pay</th>
-                                    <th>NSSF</th>
-                                    <th>SHIF</th>
-                                    <th>Housing Levy</th>
-                                    <th>PAYE</th>
-                                    <th>NITA (Employer)</th>
-                                    <th>Total Stat. Deductions</th>
-                                    <th>Expected Net Pay</th>
-                                    <th>Status</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="hr-payroll-rows">
-                                <!-- Dynamically populated by js/hr.js -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
-            <!-- EMPLOYEE: TRIP DOCUMENT CONTROL (DELIVERY NOTE & POD) -->
-            <section id="tab-admin-pod" class="panel">
-                <div class="grid-2" style="margin-bottom: 1.5rem;">
-                    
-                    <!-- 1. TRIP START: ISSUE DELIVERY NOTE WITH OCR AUTO-FILL -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h2>🚀 Trip Start: Delivery Note (Waybill)</h2>
-                            <span class="badge badge-info">Dispatch Clearance</span>
-                        </div>
-
-                        <!-- OCR UPLOAD FIELD -->
-                        <div class="form-group" style="margin-bottom: 1rem; background: var(--bg-surface, #f8f9fa); padding: 1rem; border-radius: 8px; border: 1px dashed var(--border-color, #ccc);">
-                            <label for="dn-ocr-file" style="font-weight: 600; display: block;">📷 Upload Scanned Delivery Note (OCR Auto-Fill)</label>
-                            <input type="file" id="dn-ocr-file" accept="image/*,.pdf" style="margin-top: 0.5rem;">
-                            <small id="ocr-status" style="display: block; margin-top: 0.5rem; color: var(--primary, #0056b3); font-weight: 500;"></small>
-                        </div>
-
-                        <form id="delivery-note-form">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="dn-ref">Delivery Note Ref No.</label>
-                                    <input type="text" id="dn-ref" value="DN-2026-8801">
-                                </div>
-                                <div class="form-group">
-                                    <label for="dn-customer">Customer Account Name</label>
-                                    <input type="text" id="dn-customer" value="Bamburi Cement" required>
-                                </div>
-                            </div>
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="dn-origin">Origin / Loading Point</label>
-                                    <input type="text" id="dn-origin" value="Athi River Plant" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="dn-destination">Destination / Offload Point</label>
-                                    <input type="text" id="dn-destination" value="Kisumu Depot" required>
-                                </div>
-                            </div>
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="dn-cargo">Cargo Specifications</label>
-                                    <input type="text" id="dn-cargo" value="28 Tonnes - Ordinary Portland Cement" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="dn-truck">Assigned Truck & Driver</label>
-                                    <input type="text" id="dn-truck" value="KCB-402L (Peter Ochieng)" readonly>
-                                </div>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary full-width">Issue & Print Delivery Note</button>
-                        </form>
-                    </div>
-
-                    <!-- 2. TRIP END: UPLOAD SIGNED POD -->
-                    <div class="card">
-                        <div class="card-header">
-                            <h2>🏁 Trip End: Signed Proof of Delivery (POD)</h2>
-                            <span class="badge badge-warning">Awaiting Offload Sign-off</span>
-                        </div>
-                        <form id="pod-upload-form">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="pod-delivery-no">Trip Ref / Delivery Note No.</label>
-                                    <input type="text" id="pod-delivery-no" value="DN-2026-8801" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="pod-receiver">Recipient Signature / Stamp By</label>
-                                    <input type="text" id="pod-receiver" placeholder="e.g. Site Supervisor John" required>
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="pod-file">Upload Scanned/Photo Signed POD Document</label>
-                                <input type="file" id="pod-file" accept=".pdf,.png,.jpg,.jpeg" required>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="pod-status">Cargo Condition at Offload</label>
-                                <select id="pod-status">
-                                    <option value="Accepted Intact">100% Delivered Intact</option>
-                                    <option value="Partial Damage">Partial Damage / Quantity Shortage</option>
-                                    <option value="Rejected">Rejected by Customer</option>
-                                </select>
-                            </div>
-
-                            <button type="submit" class="btn btn-success full-width">Upload & Sync POD to Customer Portal</button>
-                        </form>
-                    </div>
-
-                </div>
-
-                <!-- DOCUMENT LEDGER TABLE -->
-                <div class="card">
-                    <div class="card-header">
-                        <h2>📋 Active Waybills & Completed POD Ledger</h2>
-                    </div>
-                    <div style="overflow-x: auto;">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Trip Ref</th>
-                                    <th>Customer</th>
-                                    <th>Route</th>
-                                    <th>Trip Start (Delivery Note)</th>
-                                    <th>Trip End (POD Upload)</th>
-                                    <th>Cargo Condition</th>
-                                    <th>Document Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="pod-history-table">
-                                <tr>
-                                    <td>DN-2026-8801</td>
-                                    <td>Bamburi Cement</td>
-                                    <td>Athi River ➔ Kisumu</td>
-                                    <td>Issued (2026-09-10 08:00)</td>
-                                    <td>Uploaded (2026-09-10 14:10)</td>
-                                    <td><span class="badge badge-success">Accepted Intact</span></td>
-                                    <td><button class="btn btn-secondary">Download POD</button></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
-            <!-- EMPLOYEE: DISPATCH CONTROL -->
-            <section id="tab-admin-dispatch" class="panel">
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Fleet Operations & Breakdown Control</h2>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Truck No.</th>
-                                <th>Driver Name</th>
-                                <th>Operational Status</th>
-                                <th>Employee Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>KDA-8821</td>
-                                <td>John Mwangi</td>
-                                <td><span class="badge badge-danger">Engine Overheat Alert</span></td>
-                                <td><button class="btn btn-primary alert-action-btn">Dispatch Relief Vehicle</button></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- EMPLOYEE: CUSTOMER ONBOARDING -->
-            <section id="tab-admin-accounts" class="panel">
-                <div class="card">
-                    <div class="card-header">
-                        <h2>Onboard New Customer Account</h2>
-                    </div>
-                    <form id="account-gen-form">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="acc-company">Customer Company Name</label>
-                                <input type="text" id="acc-company" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="acc-email">Customer Primary Email</label>
-                                <input type="email" id="acc-email" required>
-                            </div>
-                        </div>
-                        <button type="submit" class="btn btn-success">Provision Account Access</button>
-                    </form>
-                </div>
-            </section>
-
+        <div id="view-finance" class="tab-view">
+          <div class="rounded-box">
+            <div class="card-header">
+              <h3>Finance & Accounts</h3>
+            </div>
+            <form id="account-gen-form">
+              <div class="field">
+                <label>Company</label>
+                <input id="acc-company" type="text" placeholder="Company name" />
+              </div>
+              <button class="btn" type="submit">Create Account</button>
+            </form>
+          </div>
         </div>
 
-    </main>
+        <div id="view-tracking" class="tab-view">
+          <section class="rounded-box">
+            <div class="card-header">
+              <h3>Shipment Tracking</h3>
+            </div>
+            <form id="shipment-track-form" style="display:flex; align-items:end; gap:12px; flex-wrap:wrap; margin:16px 0;">
+              <div class="field" style="flex:1 1 240px; margin:0;">
+                <label for="shipment-tracking-number">Tracking number</label>
+                <input id="shipment-tracking-number" type="text" value="DL-8801" required autocomplete="off" />
+              </div>
+              <button id="shipment-track-submit" class="btn" type="submit">Find shipment</button>
+            </form>
+            <div id="shipment-track-status" class="tracking-status" data-state="info" role="status" aria-live="polite">
+              Enter a tracking number to load shipment details.
+            </div>
+            <div id="shipment-track-details" hidden style="margin-top:20px;">
+              <div class="tracking-grid">
+                <div><span class="muted">Shipment</span><p id="shipment-track-id" class="tracking-value"></p></div>
+                <div><span class="muted">Status</span><p id="shipment-track-shipment-status" class="tracking-value"></p></div>
+                <div><span class="muted">Origin</span><p id="shipment-track-origin" class="tracking-value"></p></div>
+                <div><span class="muted">Destination</span><p id="shipment-track-destination" class="tracking-value"></p></div>
+                <div><span class="muted">Cargo</span><p id="shipment-track-cargo" class="tracking-value"></p></div>
+                <div><span class="muted">Tonnage</span><p id="shipment-track-tonnage" class="tracking-value"></p></div>
+              </div>
+              <div id="shipment-gps-status" class="tracking-status" data-state="info" style="margin-top:20px;">
+                Live GPS is not connected. Shipment status is shown from the logistics database.
+              </div>
+              <div id="shipment-map-root"></div>
+            </div>
+          </section>
+        </div>
 
-    <!-- TOAST CONTAINER -->
-    <div id="toast-container" class="toast-container"></div>
+        <div id="calc-result-output" class="quote-box" style="display:none;"></div>
+      </main>
+    </div>
 
-    <!-- GLOBAL MOCK APP INITIALIZER -->
-    <script>
-        window.DifanApp = {
-            formatCurrency: function(amount) {
-                return 'KES ' + amount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            },
-            showToast: function(message) {
-                const container = document.getElementById('toast-container');
-                if (container) {
-                    const toast = document.createElement('div');
-                    toast.className = 'toast-message';
-                    toast.innerText = message;
-                    container.appendChild(toast);
-                    setTimeout(() => { toast.remove(); }, 3000);
-                }
-            }
-        };
-    </script>
-
-    <!-- TESSERACT.JS OCR LIBRARY CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-    <!-- DEPENDENCY LOAD ORDER -->
     <script src="js/app.js"></script>
     <script src="js/script.js"></script>
-    <script src="js/telematics.js"></script>
-    <script src="js/booking.js"></script>
-    <script src="js/hr.js"></script>
-    <script src="js/dispatch.js"></script>
-</body>
+    <script src="js/shipmentLookup.js"></script>
+    <script>
+      const loginForm = document.getElementById('login-form');
+      const loginScreen = document.getElementById('login-screen');
+      const appShell = document.getElementById('app-shell');
+      const loginError = document.getElementById('login-error');
+      const loginSubmit = document.getElementById('login-submit');
+      const rememberMeCheckbox = document.getElementById('remember-me');
+
+      const COOKIE_NAME = 'difan_auth_session';
+      const PREF_COOKIE_NAME = 'difan_auth_prefs';
+
+      function setCookie(name, value, days = 0) {
+        const date = new Date();
+        if (days > 0) {
+          date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+          document.cookie = `${name}=${encodeURIComponent(value)}; expires=${date.toUTCString()}; path=/`;
+        } else {
+          document.cookie = `${name}=${encodeURIComponent(value)}; path=/`;
+        }
+      }
+
+      function getCookie(name) {
+        const cookies = document.cookie.split('; ');
+        for (const cookie of cookies) {
+          const [key, value] = cookie.split('=');
+          if (key === name) {
+            return decodeURIComponent(value || '');
+          }
+        }
+        return '';
+      }
+
+      function eraseCookie(name) {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+      }
+
+      function loadSavedPreferences() {
+        const raw = getCookie(PREF_COOKIE_NAME);
+        if (!raw) {
+          return;
+        }
+
+        try {
+          const prefs = JSON.parse(raw);
+          if (prefs.email) {
+            document.getElementById('login-email').value = prefs.email;
+          }
+          if (typeof prefs.password === 'string') {
+            document.getElementById('login-password').value = prefs.password;
+          }
+          if (prefs.rememberMe) {
+            rememberMeCheckbox.checked = true;
+          }
+        } catch (error) {
+          eraseCookie(PREF_COOKIE_NAME);
+        }
+      }
+
+      function savePreferences(email, password, rememberMe) {
+        if (!rememberMe) {
+          eraseCookie(PREF_COOKIE_NAME);
+          return;
+        }
+
+        const prefs = { email, password, rememberMe: true };
+        setCookie(PREF_COOKIE_NAME, JSON.stringify(prefs), 7);
+      }
+
+      function restoreSession() {
+        const sessionCookie = getCookie(COOKIE_NAME);
+        if (!sessionCookie) {
+          return false;
+        }
+
+        try {
+          const session = JSON.parse(sessionCookie);
+          if (!session || !session.token || !session.user) {
+            eraseCookie(COOKIE_NAME);
+            return false;
+          }
+
+          if (window.DifanApp) {
+            window.DifanApp.state.currentUser = {
+              name: session.user.company_name || session.user.email,
+              role: session.user.role || 'client',
+              station: 'Athi River HQ'
+            };
+          }
+
+          const userBadge = document.getElementById('current-user-badge');
+          if (userBadge) {
+            userBadge.textContent = `${session.user.company_name || session.user.email} (${(session.user.role || 'client').toUpperCase()})`;
+          }
+
+          loginScreen.style.display = 'none';
+          appShell.style.display = 'block';
+          return true;
+        } catch (error) {
+          eraseCookie(COOKIE_NAME);
+          return false;
+        }
+      }
+
+      async function onLoginSubmit(event) {
+        event.preventDefault();
+        loginError.textContent = '';
+        loginSubmit.disabled = true;
+
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        const rememberMe = rememberMeCheckbox.checked;
+
+        try {
+          const response = await fetch('http://localhost:5000/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.message || 'Authentication failed.');
+          }
+
+          const user = data.user || { company_name: email.split('@')[0], email, role: 'client' };
+          const token = data.token;
+
+          setCookie(COOKIE_NAME, JSON.stringify({ token, user }), 0);
+          localStorage.setItem('jwt_token', token);
+          localStorage.setItem('user_data', JSON.stringify(user));
+          savePreferences(email, password, rememberMe);
+
+          if (window.DifanApp) {
+            window.DifanApp.state.currentUser = {
+              name: user.company_name || user.email,
+              role: user.role || 'client',
+              station: 'Athi River HQ'
+            };
+          }
+
+          const userBadge = document.getElementById('current-user-badge');
+          if (userBadge) {
+            userBadge.textContent = `${user.company_name || user.email} (${(user.role || 'client').toUpperCase()})`;
+          }
+
+          loginScreen.style.display = 'none';
+          appShell.style.display = 'block';
+        } catch (error) {
+          loginError.textContent = error.message || 'Unable to sign in right now.';
+        } finally {
+          loginSubmit.disabled = false;
+        }
+      }
+
+      loginForm.addEventListener('submit', onLoginSubmit);
+      loadSavedPreferences();
+      const alreadyLoggedIn = restoreSession();
+      if (!alreadyLoggedIn) {
+        loginScreen.style.display = 'flex';
+        appShell.style.display = 'none';
+      }
+    </script>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>

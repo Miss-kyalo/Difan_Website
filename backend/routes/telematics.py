@@ -63,6 +63,9 @@ def calculate_geofence_detention():
     if not all([driver_id, arrival_iso, departure_iso]):
         return jsonify({"success": False, "error": "Missing driverId, arrivalTimestamp, or departureTimestamp"}), 400
 
+    if not isinstance(arrival_iso, str) or not isinstance(departure_iso, str):
+        return jsonify({"success": False, "error": "Invalid timestamp format"}), 400
+
     try:
         arrival = datetime.fromisoformat(arrival_iso)
         departure = datetime.fromisoformat(departure_iso)
@@ -123,11 +126,11 @@ def log_incident():
     if not all([vehicle_reg, incident_type, severity, notes]):
         return jsonify({"success": False, "error": "Missing required incident fields"}), 400
 
-    receipt_filename = None
+    receipt_filename = ""
     if part_source == 'Purchased' and receipt_file:
         upload_folder = os.path.join(current_app.root_path, 'static', 'uploads', 'receipts')
         os.makedirs(upload_folder, exist_ok=True)
-        receipt_filename = receipt_file.filename
+        receipt_filename = str(receipt_file.filename or 'receipt.pdf')
         receipt_path = os.path.join(upload_folder, receipt_filename)
         receipt_file.save(receipt_path)
 
