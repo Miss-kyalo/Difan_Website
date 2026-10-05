@@ -50,7 +50,9 @@ window.DifanApp = {
         currentUser: {
             name: "Mary Wambui",
             role: "accountant", // Options: 'accountant' | 'driver' | 'admin'
-            station: "Athi River HQ"
+            station: "Athi River HQ",
+            company_name: "",
+            email: ""
         },
         fleetMetrics: {
             totalTrailers: 18,
@@ -87,6 +89,12 @@ document.addEventListener('DOMContentLoaded', () => {
     initRoleSwitcher();
     initIncidentTable();
     initQuickSearch();
+    initCommunityFeed();
+
+    window.addEventListener('difan:session-ready', () => {
+        initDashboardMetrics();
+        if (typeof renderCommunityFeed === 'function') renderCommunityFeed();
+    });
 
     // --- NAVIGATION ROUTER ---
     function initNavigation() {
@@ -118,6 +126,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function initDashboardMetrics() {
         const metrics = window.DifanApp.state.fleetMetrics;
         const user = window.DifanApp.state.currentUser;
+        const isClient = user.role === 'client';
+        const roleName = String(user.role || 'employee');
 
         const setElemText = (id, text) => {
             const el = document.getElementById(id);
@@ -128,7 +138,17 @@ document.addEventListener('DOMContentLoaded', () => {
         setElemText('stat-active-transit', metrics.activeOnTransit);
         setElemText('stat-maintenance', metrics.inMaintenance);
         setElemText('stat-yard-idle', metrics.yardIdle);
-        setElemText('current-user-badge', `${user.name} (${user.role.toUpperCase()})`);
+        setElemText('current-user-badge', `${user.name} (${isClient ? 'CLIENT PORTAL' : user.role.toUpperCase()})`);
+        const clientProfile = document.getElementById('client-profile');
+        const employeeProfile = document.getElementById('employee-profile');
+        if (clientProfile) clientProfile.hidden = !isClient;
+        if (employeeProfile) employeeProfile.hidden = isClient;
+
+        setElemText('client-profile-name', user.company_name || user.name || 'Client');
+        setElemText('client-profile-email', user.email || 'Not provided');
+        setElemText('employee-profile-name', user.name || 'Employee');
+        setElemText('employee-profile-role', roleName.charAt(0).toUpperCase() + roleName.slice(1));
+        setElemText('employee-profile-station', user.station || 'Not provided');
 
         // Enforce RBAC visibility on restricted dashboard panels
         const accountantOnlyElements = document.querySelectorAll('.accountant-restricted');
@@ -143,20 +163,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!switcher) return;
 
         switcher.value = window.DifanApp.state.currentUser.role;
-        switcher.addEventListener('change', (e) => {
-            const newRole = e.target.value;
-            window.DifanApp.state.currentUser.role = newRole;
-            if (newRole === 'accountant') window.DifanApp.state.currentUser.name = "Mary Wambui";
-            if (newRole === 'driver') window.DifanApp.state.currentUser.name = "Peter Ochieng";
-            if (newRole === 'admin') window.DifanApp.state.currentUser.name = "David Kiprop";
-
-            window.DifanApp.showToast(`Session role switched to: ${newRole.toUpperCase()}`, 'info');
-            initDashboardMetrics();
-
-            // Trigger re-render if HR payroll or roster functions are globally available
-            if (typeof renderPayroll === 'function') renderPayroll();
-            if (typeof renderRoster === 'function') renderRoster();
-        });
+        switcher.disabled = true;
+        switcher.setAttribute('aria-label', 'Portal role assigned to your account');
     }
 
     // --- INCIDENT REPORT & MECHANIC ASSIGNMENT TABLE ---
@@ -285,10 +293,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (resultBox) {
                 resultBox.style.display = 'block';
                 resultBox.innerHTML = `
-                    <div style="background: #e8f4fd; border: 1px solid #b8daff; padding: 1rem; border-radius: 6px;">
-                        <h4 style="margin: 0 0 6px 0; color: #0056b3;">🚚 Freight Quote: ${origin} to ${destination}</h4>
+                    <div style="background: #efebe1; border: 1px solid #d8d3c8; padding: 1rem; border-radius: 4px;">
+                        <h4 style="margin: 0 0 6px 0; color: #1b3b2b;">🚚 Freight Quote: ${origin} to ${destination}</h4>
                         <p style="margin: 2px 0;">Distance: <strong>${route.km} KM</strong> | Load: <strong>${tonnage} Tonnes</strong></p>
-                        <p style="margin: 2px 0; font-size: 1.1rem; font-weight: bold; color: #28a745;">Total Quote: ${window.DifanApp.formatCurrency(total)}</p>
+                        <p style="margin: 2px 0; font-size: 1.1rem; font-weight: bold; color: #2a5a3b;">Total Quote: ${window.DifanApp.formatCurrency(total)}</p>
                     </div>
                 `;
             }
@@ -310,6 +318,101 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.style.display = row.innerText.toLowerCase().includes(query) ? '' : 'none';
             });
         });
+    }
+
+    function initCommunityFeed() {
+        const form = document.getElementById('community-post-form');
+        const input = document.getElementById('community-post-input');
+        const feed = document.getElementById('community-feed');
+        if (!form || !input || !feed) return;
+
+        const posts = [
+            {
+                author: 'Difan Dispatch',
+                label: 'Operations',
+                content: 'Welcome to the Difan community. Share team milestones, safe-driving wins, and service updates here.',
+                time: 'Today',
+                appreciations: 8,
+            },
+            {
+                author: 'Fleet Team',
+                label: 'Team reminder',
+                content: 'A complete handover helps every team pick up smoothly. Record the receiving driver and goods condition whenever a load is transferred.',
+                time: 'Today',
+                appreciations: 5,
+            },
+        ];
+
+        function initials(name) {
+            return String(name || 'D')
+                .split(/\s+/)
+                .slice(0, 2)
+                .map(part => part[0] || '')
+                .join('')
+                .toUpperCase();
+        }
+
+        function renderCommunityFeed() {
+            feed.replaceChildren();
+            posts.forEach(post => {
+                const article = document.createElement('article');
+                article.className = 'community-post';
+
+                const header = document.createElement('div');
+                header.className = 'community-post-header';
+                const avatar = document.createElement('span');
+                avatar.className = 'community-avatar';
+                avatar.setAttribute('aria-hidden', 'true');
+                avatar.textContent = initials(post.author);
+                const identity = document.createElement('div');
+                const author = document.createElement('p');
+                author.className = 'community-post-author';
+                author.textContent = post.author;
+                const time = document.createElement('time');
+                time.className = 'community-post-time';
+                time.textContent = `${post.label} · ${post.time}`;
+                identity.append(author, time);
+                header.append(avatar, identity);
+
+                const content = document.createElement('p');
+                content.className = 'community-post-content';
+                content.textContent = post.content;
+
+                const actions = document.createElement('div');
+                actions.className = 'community-post-actions';
+                const appreciate = document.createElement('button');
+                appreciate.type = 'button';
+                appreciate.setAttribute('aria-pressed', post.liked ? 'true' : 'false');
+                appreciate.textContent = `${post.liked ? '★ Appreciated' : '☆ Appreciate'} · ${post.appreciations}`;
+                appreciate.addEventListener('click', () => {
+                    post.liked = !post.liked;
+                    post.appreciations += post.liked ? 1 : -1;
+                    renderCommunityFeed();
+                });
+                actions.appendChild(appreciate);
+                article.append(header, content, actions);
+                feed.appendChild(article);
+            });
+        }
+
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            const content = input.value.trim();
+            if (!content) return;
+            const currentUser = window.DifanApp.state.currentUser;
+            posts.unshift({
+                author: currentUser.name || 'Difan colleague',
+                label: currentUser.role === 'client' ? 'Client update' : 'Team update',
+                content,
+                time: 'Just now',
+                appreciations: 0,
+            });
+            input.value = '';
+            renderCommunityFeed();
+        });
+
+        window.renderCommunityFeed = renderCommunityFeed;
+        renderCommunityFeed();
     }
 
     console.log("Difan Logistics Core App Initialized with RBAC & Incident Tracking.");

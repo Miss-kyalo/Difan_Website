@@ -5,3 +5,10 @@ Flask-Bcrypt
 Flask-JWT-Extended
 marshmallow
 sendgrid
+fastapi
+httpx
+python-dotenv
+uvicorn
+Pillow
+PyMuPDF
+rapidocr-onnxruntime

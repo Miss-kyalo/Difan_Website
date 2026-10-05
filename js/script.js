@@ -46,8 +46,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    btnClient.addEventListener('click', () => switchPortal('client'));
-    btnAdmin.addEventListener('click', () => switchPortal('admin'));
+    if (btnClient && btnAdmin) {
+        btnClient.addEventListener('click', () => switchPortal('client'));
+        btnAdmin.addEventListener('click', () => switchPortal('admin'));
+    }
 
     document.querySelectorAll('.tab-btn').forEach(button => {
         button.addEventListener('click', (e) => {

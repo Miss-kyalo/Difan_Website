@@ -14,24 +14,57 @@ L.Icon.Default.mergeOptions({
 // Custom Icons for Truck, Origin, and Destination
 const truckIcon = L.divIcon({
   className: 'custom-truck-icon',
-  html: `<div style="background-color: #2563eb; color: white; padding: 8px; border-radius: 9999px; border: 2px solid white; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; font-size: 16px;">🚚</div>`,
+  html: `<div style="background-color: #1b3b2b; color: #f8f6f0; padding: 8px; border-radius: 9999px; border: 2px solid white; box-shadow: 0 4px 12px rgba(27,59,43,0.25); display: flex; align-items: center; justify-content: center; font-size: 16px;">🚚</div>`,
   iconSize: [36, 36],
   iconAnchor: [18, 18],
 });
 
 const originIcon = L.divIcon({
   className: 'custom-origin-icon',
-  html: `<div style="background-color: #10b981; color: white; width: 16px; height: 16px; border-radius: 9999px; border: 3px solid white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);"></div>`,
+  html: `<div style="background-color: #2a5a3b; color: white; width: 16px; height: 16px; border-radius: 9999px; border: 3px solid white; box-shadow: 0 2px 6px rgba(27,59,43,0.2);"></div>`,
   iconSize: [16, 16],
   iconAnchor: [8, 8],
 });
 
 const destinationIcon = L.divIcon({
   className: 'custom-dest-icon',
-  html: `<div style="background-color: #ef4444; color: white; width: 16px; height: 16px; border-radius: 9999px; border: 3px solid white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);"></div>`,
+  html: `<div style="background-color: #8b4a2b; color: white; width: 16px; height: 16px; border-radius: 9999px; border: 3px solid white; box-shadow: 0 2px 6px rgba(27,59,43,0.2);"></div>`,
   iconSize: [16, 16],
   iconAnchor: [8, 8],
 });
+
+function getRoutePosition(waypoints, progressPercentage) {
+  const segmentDistances = waypoints.slice(1).map((point, index) => {
+    const [lat1, lon1] = waypoints[index];
+    const [lat2, lon2] = point;
+    const toRadians = (degrees) => (degrees * Math.PI) / 180;
+    const latitudeDelta = toRadians(lat2 - lat1);
+    const longitudeDelta = toRadians(lon2 - lon1);
+    const haversine =
+      Math.sin(latitudeDelta / 2) ** 2 +
+      Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+        Math.sin(longitudeDelta / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+  });
+  const routeDistance = segmentDistances.reduce((total, distance) => total + distance, 0);
+  let distanceAlongRoute = (routeDistance * progressPercentage) / 100;
+
+  for (let index = 0; index < segmentDistances.length; index += 1) {
+    const segmentDistance = segmentDistances[index];
+    if (distanceAlongRoute <= segmentDistance) {
+      const segmentProgress = segmentDistance === 0 ? 0 : distanceAlongRoute / segmentDistance;
+      const [startLat, startLon] = waypoints[index];
+      const [endLat, endLon] = waypoints[index + 1];
+      return [
+        startLat + (endLat - startLat) * segmentProgress,
+        startLon + (endLon - startLon) * segmentProgress,
+      ];
+    }
+    distanceAlongRoute -= segmentDistance;
+  }
+
+  return waypoints[waypoints.length - 1];
+}
 
 // Helper component to auto-recenter the map when driver coordinates update
 function RecenterMap({ position }) {
@@ -53,11 +86,7 @@ function RecenterMap({ position }) {
   return null;
 }
 
-// Protrack API Config
-const PROTRACK_CONFIG = {
-  baseUrl: import.meta.env.VITE_PROTRACK_URL || 'https://api.protrack365.com',
-  account: import.meta.env.VITE_PROTRACK_ACCOUNT || '',
-};
+const MAPS_API_URL = import.meta.env.VITE_MAPS_API_URL || 'http://localhost:8000';
 
 export default function ShipmentTrackingPage({
   trackingNumber = 'DL-8492',
@@ -81,12 +110,15 @@ export default function ShipmentTrackingPage({
     origin: 'Athi River Industrial Zone',
     destination: 'Kisumu Central Warehouse',
     cargoType: 'General Goods / FMCG',
+    companyName: '',
+    deliveries: [],
+    destinationVerified: false,
     tonnage: 15,
     progressPercentage: 45,
     speedKmH: 68,
     distanceRemainingKm: 185,
     etaMinutes: 165,
-    currentCoords: [-0.2833, 36.0667], // Live Lat/Lng
+    currentCoords: getRoutePosition(routeWaypoints, 45),
     lastUpdated: 'Just now',
     driver: {
       name: 'Samuel M.',
@@ -98,9 +130,8 @@ export default function ShipmentTrackingPage({
     },
   });
 
-  const [protrackToken, setProtrackToken] = useState(null);
   const [isProtrackConnected, setIsProtrackConnected] = useState(false);
-  const [activeTab, setActiveTab] = useState('map');
+  const [protrackConfigured, setProtrackConfigured] = useState(false);
   const [callStatus, setCallStatus] = useState(null);
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState([
@@ -118,7 +149,12 @@ export default function ShipmentTrackingPage({
         origin: record.origin || previous.origin,
         destination: record.destination || previous.destination,
         cargoType: record.cargo_type || previous.cargoType,
+        companyName: record.company_name || '',
+        assignedDriverName: record.assigned_driver_name || '',
+        deliveries: record.deliveries || [],
+        destinationVerified: record.destination_verified === true,
         tonnage: record.tonnage ?? previous.tonnage,
+        imei: record.imei || previous.imei,
       }));
     };
 
@@ -126,47 +162,50 @@ export default function ShipmentTrackingPage({
     return () => document.removeEventListener('shipment:loaded', handleShipmentLoaded);
   }, []);
 
-  // Protrack Authenticate & Poll Telemetry
   useEffect(() => {
-    const authenticateProtrack = async () => {
-      if (!PROTRACK_CONFIG.account) {
-        console.info('Protrack account is not configured. Showing the simulated route.');
-        return;
-      }
+    let isMounted = true;
 
-      try {
-        const response = await fetch(`${PROTRACK_CONFIG.baseUrl}/api/authorization`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            account: PROTRACK_CONFIG.account,
-            time: Math.floor(Date.now() / 1000),
-          }),
-        });
-        const data = await response.json();
-        if (data.code === 0 && data.record?.access_token) {
-          setProtrackToken(data.record.access_token);
-          setIsProtrackConnected(true);
+    fetch(`${MAPS_API_URL}/health`)
+      .then((response) => {
+        if (!response.ok) throw new Error('GPS service health check failed.');
+        return response.json();
+      })
+      .then((data) => {
+        if (isMounted) setProtrackConfigured(data.protrack_configured === true);
+      })
+      .catch((error) => {
+        if (isMounted) {
+          console.warn('Maps service is unavailable. Showing the simulated route.', error);
+          setProtrackConfigured(false);
         }
-      } catch (err) {
-        console.warn('Protrack is unavailable. Showing the simulated route.');
-      }
-    };
+      });
 
-    authenticateProtrack();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
     const fetchTelemetry = async () => {
-      if (protrackToken && isProtrackConnected) {
+      if (protrackConfigured) {
         try {
-          const res = await fetch(
-            `${PROTRACK_CONFIG.baseUrl}/api/track?access_token=${protrackToken}&imeis=${shipment.imei}`
+          const response = await fetch(
+            `${MAPS_API_URL}/api/protrack/track?imeis=${encodeURIComponent(shipment.imei)}`,
+            {
+              headers: {
+                Authorization: `Bearer ${localStorage.getItem('jwt_token') || ''}`,
+              },
+            }
           );
-          const data = await res.json();
+          const positions = await response.json();
 
-          if (data.code === 0 && data.record && data.record.length > 0) {
-            const gps = data.record[0];
+          if (!response.ok) {
+            throw new Error(positions.detail || 'GPS service request failed.');
+          }
+
+          const gps = Array.isArray(positions) ? positions[0] : null;
+          if (gps?.online) {
+            setIsProtrackConnected(true);
             setShipment((prev) => ({
               ...prev,
               currentCoords: [gps.latitude, gps.longitude],
@@ -178,28 +217,29 @@ export default function ShipmentTrackingPage({
             }));
             return;
           }
-        } catch (e) {
-          console.error('Error fetching Protrack telemetry:', e);
+          setIsProtrackConnected(false);
+        } catch (error) {
+          console.warn('GPS telemetry failed. Switching to the simulated route.', error);
+          setProtrackConfigured(false);
+          setIsProtrackConnected(false);
         }
+      } else {
+        setIsProtrackConnected(false);
       }
 
-      // Live Simulation GPS Step
+      // Use the existing simulated route when GPS credentials or service are unavailable.
       setShipment((prev) => {
         if (prev.progressPercentage >= 98) return prev;
         const newProgress = Math.min(100, prev.progressPercentage + 1);
         const newDist = Math.max(0, prev.distanceRemainingKm - 2);
         const newEta = Math.max(0, prev.etaMinutes - 2);
 
-        // Interpolate coordinates along route
-        const lat = originCoords[0] + (destinationCoords[0] - originCoords[0]) * (newProgress / 100);
-        const lng = originCoords[1] + (destinationCoords[1] - originCoords[1]) * (newProgress / 100);
-
         return {
           ...prev,
           progressPercentage: newProgress,
           distanceRemainingKm: newDist,
           etaMinutes: newEta,
-          currentCoords: [lat, lng],
+          currentCoords: getRoutePosition(routeWaypoints, newProgress),
           speedKmH: Math.floor(62 + Math.random() * 10),
           lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         };
@@ -208,7 +248,7 @@ export default function ShipmentTrackingPage({
 
     const interval = setInterval(fetchTelemetry, 4000);
     return () => clearInterval(interval);
-  }, [protrackToken, isProtrackConnected, shipment.imei]);
+  }, [shipment.imei, protrackConfigured]);
 
   const handleSendMessage = (e) => {
     e.preventDefault();
@@ -244,22 +284,22 @@ export default function ShipmentTrackingPage({
   ];
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="tracking-page">
       
       {/* Top Header & Telemetry Summary */}
-      <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl border border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="tracking-overview">
         <div>
           <div className="flex items-center gap-3">
             {onBack && (
               <button
                 onClick={onBack}
-                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold px-3 py-1.5 rounded-lg border border-slate-700 transition"
+                className="tracking-back-button"
               >
                 ← Back
               </button>
             )}
             <span
-              className={`text-xs font-extrabold uppercase tracking-widest px-3 py-1 rounded-full border flex items-center gap-1.5 ${
+              className={`tracking-connection-status text-xs font-extrabold uppercase tracking-widest px-3 py-1 rounded-full border flex items-center gap-1.5 ${
                 isProtrackConnected
                   ? 'text-emerald-400 bg-emerald-950 border-emerald-800'
                   : 'text-blue-400 bg-blue-950 border-blue-800'
@@ -269,83 +309,89 @@ export default function ShipmentTrackingPage({
               {isProtrackConnected ? 'Protrack Live Map' : 'Protrack Simulated Route'}
             </span>
           </div>
-          <h1 className="text-2xl font-black mt-2 tracking-tight">
+          <h1 className="mt-2 tracking-tight">
             Shipment #{shipment.id}
           </h1>
-          <p className="text-slate-400 text-xs mt-0.5">
+          <p className="text-xs mt-0.5">
             {shipment.origin} ➔ {shipment.destination}
           </p>
+          {shipment.companyName && (
+            <p className="text-xs mt-0.5">
+              Company: {shipment.companyName}
+              {shipment.assignedDriverName ? ` · Driver: ${shipment.assignedDriverName}` : ''}
+            </p>
+          )}
+          {shipment.destinationVerified && (
+            <p className="tracking-ocr-validation">Destination verified against uploaded delivery documents</p>
+          )}
         </div>
 
-        {/* Telemetry Snapshot Cards */}
-        <div className="flex gap-3 bg-slate-800/80 p-3 rounded-xl border border-slate-700 text-center w-full sm:w-auto justify-around">
-          <div>
-            <p className="text-[10px] text-slate-400 uppercase font-semibold">ETA Remaining</p>
-            <p className="text-lg font-black text-emerald-400 font-mono">
-              {Math.floor(shipment.etaMinutes / 60)}h {shipment.etaMinutes % 60}m
-            </p>
-          </div>
-          <div className="w-px bg-slate-700"></div>
-          <div>
-            <p className="text-[10px] text-slate-400 uppercase font-semibold">Distance</p>
-            <p className="text-lg font-black text-blue-400 font-mono">{shipment.distanceRemainingKm} km</p>
-          </div>
-          <div className="w-px bg-slate-700"></div>
-          <div>
-            <p className="text-[10px] text-slate-400 uppercase font-semibold">Simulated Speed</p>
-            <p className="text-lg font-black text-amber-400 font-mono">{shipment.speedKmH} km/h</p>
-          </div>
-        </div>
       </div>
 
-      {/* Main Grid: Left Map + Contact (2 Cols) | Right Timeline & Details (1 Col) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {shipment.deliveries?.length > 0 && (
+        <details className="tracking-disclosure" open>
+          <summary className="tracking-summary">
+            <span>Goods and deliveries</span>
+            <span className="tracking-summary-hint">{shipment.deliveries.length} delivery reference(s), read by OCR</span>
+          </summary>
+          <div className="tracking-delivery-list">
+            {shipment.deliveries.map((delivery) => (
+              <article className="tracking-delivery-card" key={`${shipment.id}-${delivery.delivery_number}`}>
+                <h3>{delivery.delivery_number}</h3>
+                <p><strong>Goods:</strong> {delivery.goods_description || 'Not detected on scan'}</p>
+                <p><strong>Destination:</strong> {delivery.destination || shipment.destination}</p>
+                <p><strong>Customer:</strong> {delivery.customer_name || 'Not detected on scan'}</p>
+              </article>
+            ))}
+          </div>
+        </details>
+      )}
 
-        {/* Left Column: Interactive Leaflet Map & Driver Contact Controls */}
-        <div className="lg:col-span-2 space-y-6">
+      <details className="tracking-disclosure">
+        <summary className="tracking-summary">
+          <span>Trip metrics</span>
+          <span className="tracking-summary-hint">ETA, distance and speed</span>
+        </summary>
+        <div className="tracking-metrics">
+          <div className="tracking-metric">
+            <p>ETA remaining</p>
+            <p>{Math.floor(shipment.etaMinutes / 60)}h {shipment.etaMinutes % 60}m</p>
+          </div>
+          <div className="tracking-metric">
+            <p>Distance remaining</p>
+            <p>{shipment.distanceRemainingKm} km</p>
+          </div>
+          <div className="tracking-metric">
+            <p>Current speed</p>
+            <p>{shipment.speedKmH} km/h</p>
+          </div>
+        </div>
+      </details>
+
+      {/* Route map remains visible; optional shipment information is grouped in disclosures below. */}
+      <div className="tracking-main-column">
 
           {/* Interactive Map Card */}
-          <div className="bg-slate-900 rounded-2xl border border-slate-800 shadow-xl overflow-hidden flex flex-col">
+          <div className="tracking-map-card">
             
-            {/* Header Controls */}
-            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/90">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setActiveTab('map')}
-                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition ${
-                    activeTab === 'map' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  🗺️ Interactive Route Map
-                </button>
-                <button
-                  onClick={() => setActiveTab('details')}
-                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition ${
-                    activeTab === 'details' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  📋 Manifest Details
-                </button>
+            <div className="tracking-map-header">
+              <div>
+                <h2>Shipment route</h2>
+                <p>{isProtrackConnected ? 'Live GPS location' : 'Simulated route'} · Last update {shipment.lastUpdated}</p>
               </div>
-
-              <span className="text-[11px] text-slate-400 font-mono">
-                GPS Ping: <strong className="text-slate-200">{shipment.lastUpdated}</strong>
-              </span>
             </div>
 
             {/* Live Leaflet Map Viewport */}
-            {activeTab === 'map' ? (
-              <div className="relative h-80 sm:h-96 w-full z-0" style={{ height: 'min(60vh, 420px)', minHeight: '320px', position: 'relative', width: '100%' }}>
+            <div className="tracking-map-canvas">
                 <MapContainer
                   center={shipment.currentCoords}
                   zoom={8}
                   scrollWheelZoom={true}
                   style={{ height: '100%', width: '100%' }}
                 >
-                  {/* CartoDB Dark Matter Tiles for Sleek Dark Theme */}
                   <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                    url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
 
                   {/* Dynamic Map Recenter */}
@@ -354,10 +400,9 @@ export default function ShipmentTrackingPage({
                   {/* Planned Route Line */}
                   <Polyline
                     positions={routeWaypoints}
-                    color="#3b82f6"
-                    weight={4}
-                    dashArray="8, 8"
-                    opacity={0.8}
+                    color="#1b3b2b"
+                    weight={5}
+                    opacity={0.75}
                   />
 
                   {/* Origin Marker */}
@@ -384,50 +429,40 @@ export default function ShipmentTrackingPage({
                   </Marker>
                 </MapContainer>
 
-                {/* Overlaid Progress Banner */}
-                <div className="absolute bottom-3 left-4 right-4 z-[500] bg-slate-900/90 border border-slate-800 rounded-xl p-3 backdrop-blur-md flex justify-between items-center text-xs">
-                  <div>
-                    <span className="text-slate-400 text-[11px]">Simulated Coordinates:</span>
-                    <p className="font-mono text-slate-200 font-bold">
-                      {shipment.currentCoords[0].toFixed(4)}°, {shipment.currentCoords[1].toFixed(4)}°
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-slate-400 text-[11px]">Route Completion:</span>
-                    <p className="font-mono text-blue-400 font-bold">{shipment.progressPercentage}%</p>
-                  </div>
-                </div>
+            </div>
+            <div className="tracking-map-progress">
+              <div className="tracking-map-progress-label">
+                <span>Route progress</span>
+                <span>{shipment.progressPercentage}%</span>
               </div>
-            ) : (
-              /* Manifest Details */
-              <div className="p-6 bg-slate-950 text-slate-300 space-y-4 text-xs">
-                <h3 className="font-bold text-sm text-white border-b border-slate-800 pb-2">
-                  Protrack Telematics & Cargo Specs
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                    <p className="text-slate-500 uppercase font-semibold">Protrack IMEI</p>
-                    <p className="text-sm font-bold text-blue-400 font-mono mt-1">{shipment.imei}</p>
-                  </div>
-                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                    <p className="text-slate-500 uppercase font-semibold">Map Provider</p>
-                    <p className="text-sm font-bold text-slate-200 mt-1">OpenStreetMap / Leaflet</p>
-                  </div>
-                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                    <p className="text-slate-500 uppercase font-semibold">Cargo Type</p>
-                    <p className="text-sm font-bold text-slate-200 mt-1">{shipment.cargoType}</p>
-                  </div>
-                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                    <p className="text-slate-500 uppercase font-semibold">Tonnage</p>
-                    <p className="text-sm font-bold text-slate-200 mt-1">{shipment.tonnage} Metric Tons</p>
-                  </div>
-                </div>
+              <div className="tracking-progress-track">
+                <div
+                  className="tracking-progress-fill"
+                  style={{ width: `${shipment.progressPercentage}%` }}
+                />
               </div>
-            )}
+            </div>
           </div>
 
-          {/* Driver Contact & Live Dispatch Controls */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-5">
+          <details className="tracking-disclosure">
+            <summary className="tracking-summary">
+              <span>Shipment details</span>
+              <span className="tracking-summary-hint">Cargo and tracking device</span>
+            </summary>
+            <dl className="tracking-detail-grid">
+              <div><dt>Cargo</dt><dd>{shipment.cargoType}</dd></div>
+              <div><dt>Weight</dt><dd>{shipment.tonnage} metric tons</dd></div>
+              <div><dt>Tracker IMEI</dt><dd>{shipment.imei}</dd></div>
+              <div><dt>Map provider</dt><dd>OpenStreetMap</dd></div>
+            </dl>
+          </details>
+
+          <details className="tracking-disclosure">
+            <summary className="tracking-summary">
+              <span>Contact driver</span>
+              <span className="tracking-summary-hint">Call or send a dispatch message</span>
+            </summary>
+          <div className="tracking-contact-content">
             <div className="flex justify-between items-center border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-blue-600 text-white font-black flex items-center justify-center text-lg shadow-md">
@@ -448,7 +483,7 @@ export default function ShipmentTrackingPage({
 
               <button
                 onClick={() => setCallStatus(callStatus ? null : 'calling')}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition flex items-center gap-1.5 shadow"
+                className="tracking-action-button"
               >
                 <span>📞</span> Call Driver
               </button>
@@ -465,7 +500,7 @@ export default function ShipmentTrackingPage({
                 </div>
                 <button
                   onClick={() => setCallStatus(null)}
-                  className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition"
+                  className="tracking-action-button tracking-action-secondary"
                 >
                   End Call
                 </button>
@@ -507,19 +542,21 @@ export default function ShipmentTrackingPage({
                 />
                 <button
                   type="submit"
-                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition"
+                  className="tracking-action-button"
                 >
                   Send
                 </button>
               </form>
             </div>
           </div>
+          </details>
 
-        </div>
-
-        {/* Right Column: Timeline */}
-        <div className="space-y-6">
-          <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl border border-slate-800 space-y-6">
+          <details className="tracking-disclosure">
+            <summary className="tracking-summary">
+              <span>Shipment status</span>
+              <span className="tracking-summary-hint">Progress updates and delivery protection</span>
+            </summary>
+          <div className="tracking-timeline-content">
             <div className="border-b border-slate-800 pb-3 flex justify-between items-center">
               <div>
                 <h3 className="text-base font-extrabold tracking-tight">Status Timeline</h3>
@@ -573,7 +610,7 @@ export default function ShipmentTrackingPage({
               </p>
             </div>
           </div>
-        </div>
+          </details>
 
       </div>
     </div>
