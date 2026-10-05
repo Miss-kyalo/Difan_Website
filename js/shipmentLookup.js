@@ -22,7 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const uploadShipmentSelect = document.getElementById('upload-shipment-select');
   const documentList = document.getElementById('shipment-document-list');
   const goodsNavLink = document.getElementById('goods-navigation');
+  const goodsCompanySelect = document.getElementById('goods-company-select');
+  const goodsDeliverySelect = document.getElementById('goods-delivery-select');
+  const goodsDeliveryDetails = document.getElementById('goods-delivery-details');
   let shipments = [];
+  let clientAccounts = [];
 
   function setStatus(message, state = 'info') {
     statusMessage.textContent = message;
@@ -145,6 +149,81 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function renderGoodsDeliveryDetails() {
+    goodsDeliveryDetails.replaceChildren();
+    const shipment = shipments.find((item) => item.tracking_number === goodsDeliverySelect.value);
+    if (!shipment) {
+      const empty = document.createElement('p');
+      empty.className = 'workflow-empty';
+      empty.textContent = 'No assigned shipments are available for this client account.';
+      goodsDeliveryDetails.appendChild(empty);
+      return;
+    }
+
+    const summary = document.createElement('p');
+    summary.textContent = `${shipment.tracking_number} · ${shipment.status.replaceAll('_', ' ')} · ${shipment.origin} to ${shipment.destination}`;
+    goodsDeliveryDetails.appendChild(summary);
+    const deliveries = shipment.deliveries || [];
+    if (!deliveries.length) {
+      const empty = document.createElement('p');
+      empty.className = 'workflow-empty';
+      empty.textContent = 'No OCR-extracted delivery records have been uploaded for this shipment yet.';
+      goodsDeliveryDetails.appendChild(empty);
+      return;
+    }
+    const list = document.createElement('ul');
+    list.className = 'shipment-delivery-summary';
+    deliveries.forEach((delivery) => {
+      const item = document.createElement('li');
+      item.textContent = [
+        delivery.delivery_number,
+        delivery.goods_description || 'Goods not read',
+        delivery.destination || shipment.destination,
+        delivery.customer_name ? `Client: ${delivery.customer_name}` : '',
+      ].filter(Boolean).join(' · ');
+      list.appendChild(item);
+    });
+    goodsDeliveryDetails.appendChild(list);
+  }
+
+  function refreshGoodsDeliveryOptions() {
+    if (!goodsCompanySelect || !goodsDeliverySelect || !goodsDeliveryDetails) return;
+    const user = window.DifanApp?.state?.currentUser;
+    const role = user?.role;
+    const isAdminOrHr = role === 'admin' || role === 'hr';
+    const companyNames = isAdminOrHr
+      ? [...new Set(clientAccounts.map((account) => account.company_name).filter(Boolean))]
+      : role === 'client'
+        ? [user.company_name].filter(Boolean)
+        : [...new Set(shipments.map((shipment) => shipment.company_name).filter(Boolean))];
+    const currentCompany = goodsCompanySelect.value;
+    goodsCompanySelect.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Select a client account';
+    goodsCompanySelect.appendChild(placeholder);
+    companyNames.sort((a, b) => a.localeCompare(b)).forEach((company) => {
+      const option = document.createElement('option');
+      option.value = company;
+      option.textContent = company;
+      goodsCompanySelect.appendChild(option);
+    });
+    goodsCompanySelect.disabled = companyNames.length <= 1;
+    goodsCompanySelect.value = companyNames.includes(currentCompany)
+      ? currentCompany
+      : (companyNames[0] || '');
+
+    const selectedCompany = goodsCompanySelect.value;
+    const normalizedCompany = selectedCompany.trim().toLocaleLowerCase();
+    const companyShipments = shipments.filter(
+      (shipment) => (shipment.company_name || '').trim().toLocaleLowerCase() === normalizedCompany,
+    );
+    replaceSelectOptions(goodsDeliverySelect, companyShipments, 'Select an assigned delivery');
+    goodsDeliverySelect.disabled = !companyShipments.length;
+    if (companyShipments.length) goodsDeliverySelect.value = companyShipments[0].tracking_number;
+    renderGoodsDeliveryDetails();
+  }
+
   function formatStamp(value) {
     return value ? new Date(value).toLocaleString() : 'Pending';
   }
@@ -236,12 +315,16 @@ document.addEventListener('DOMContentLoaded', () => {
   async function refreshGoodsPage() {
     const role = window.DifanApp?.state?.currentUser?.role;
     const isDriver = role === 'driver';
-    const canDownload = role === 'client' || role === 'admin';
+    const isAdminOrHr = role === 'admin' || role === 'hr';
+    const canDownload = role === 'client' || isAdminOrHr;
     uploadPanel.hidden = !isDriver;
     documentPanel.hidden = !canDownload;
+    document.getElementById('goods-delivery-browser').hidden =
+      !['driver', 'client', 'admin', 'hr'].includes(role);
     try {
       const data = await apiRequest('http://localhost:5000/api/shipments');
       shipments = data.shipments || [];
+      refreshGoodsDeliveryOptions();
       if (isDriver) {
         replaceSelectOptions(uploadShipmentSelect, shipments, 'Select an assigned shipment');
       }
@@ -271,11 +354,11 @@ document.addEventListener('DOMContentLoaded', () => {
       setStatus(`${shipments.length} shipment${shipments.length === 1 ? '' : 's'} available to your account.`, 'success');
 
       const user = window.DifanApp?.state?.currentUser;
-      const isAdmin = user?.role === 'admin';
-      adminTools.hidden = !isAdmin;
-      if (isAdmin) await loadAdminOptions();
-      if (user?.role === 'driver' || user?.role === 'client' || isAdmin) {
-        refreshGoodsPage();
+      const isAdminOrHr = user?.role === 'admin' || user?.role === 'hr';
+      adminTools.hidden = !isAdminOrHr;
+      if (isAdminOrHr) await loadAdminOptions();
+      if (user?.role === 'driver' || user?.role === 'client' || isAdminOrHr) {
+        await refreshGoodsPage();
       }
     } catch (error) {
       shipments = [];
@@ -309,8 +392,8 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadAdminOptions() {
     const data = await apiRequest('http://localhost:5000/api/auth/users');
     const users = data.users || [];
-    const clientAccounts = users.filter((user) => user.role === 'client');
-    const drivers = users.filter((user) => user.role === 'driver');
+    clientAccounts = users.filter((user) => user.role === 'client');
+    const drivers = users.filter((user) => user.role === 'driver' && user.account_status === 'active');
     const companySelect = document.getElementById('assignment-company');
     const driverSelect = document.getElementById('assignment-driver');
     const shipmentSelect = document.getElementById('assignment-shipment');
@@ -335,7 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setOptions(companySelect, uniqueCompanies.map((company) => ({ value: company, label: company })), 'Select client company');
     setOptions(driverSelect, drivers.map((user) => ({
       value: String(user.id),
-      label: `${user.driver_name} (${user.email})`,
+      label: `${user.display_name || user.driver_name || user.email} (${user.email})`,
     })), 'Select driver');
     setOptions(shipmentSelect, shipments.map((shipment) => ({
       value: shipment.tracking_number,
@@ -345,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
     destinationInput.value = selectedShipment?.destination || '';
     setOptions(accountSelect, users.map((user) => ({
       value: String(user.id),
-      label: `${user.email} — ${user.role}`,
+      label: `${user.email} — ${user.role}${user.account_status === 'pending' ? ' (pending)' : ''}`,
     })), 'Select account');
 
     const noAssignmentTargets = !uniqueCompanies.length || !drivers.length;
@@ -388,11 +471,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('assignment-destination').value = shipment?.destination || '';
   });
 
-  accountRole.addEventListener('change', () => {
-    const needsDriverName = accountRole.value === 'driver';
-    driverNameField.hidden = !needsDriverName;
-    document.getElementById('account-driver-name').required = needsDriverName;
-  });
+  function updateDisplayNameRequirement() {
+    const needsDisplayName = ['driver', 'mechanic', 'admin', 'hr'].includes(accountRole.value);
+    const label = driverNameField.querySelector('label');
+    label.textContent = accountRole.value === 'driver' ? 'Driver display name' : 'Employee display name';
+    const displayNameInput = document.getElementById('account-driver-name');
+    driverNameField.hidden = !needsDisplayName;
+    displayNameInput.required = needsDisplayName;
+  }
+
+  accountRole.addEventListener('change', updateDisplayNameRequirement);
+  updateDisplayNameRequirement();
 
   roleForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -400,10 +489,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const userId = document.getElementById('account-role-user').value;
       const role = accountRole.value;
-      const driverName = document.getElementById('account-driver-name').value.trim();
+      const displayName = document.getElementById('account-driver-name').value.trim();
       await apiRequest(`http://localhost:5000/api/auth/users/${encodeURIComponent(userId)}/role`, {
         method: 'PATCH',
-        body: JSON.stringify({ role, driver_name: driverName }),
+        body: JSON.stringify({ role, display_name: displayName }),
       });
       adminStatus.textContent = 'Account role updated. The user should sign in again to refresh their portal.';
       await loadAvailableShipments();
@@ -443,6 +532,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   documentSelect.addEventListener('change', () => loadShipmentDocuments(documentSelect.value));
+  goodsCompanySelect.addEventListener('change', refreshGoodsDeliveryOptions);
+  goodsDeliverySelect.addEventListener('change', renderGoodsDeliveryDetails);
   if (navLink) navLink.addEventListener('click', loadAvailableShipments);
   if (goodsNavLink) goodsNavLink.addEventListener('click', refreshGoodsPage);
   window.addEventListener('difan:session-ready', loadAvailableShipments);

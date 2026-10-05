@@ -15,7 +15,7 @@ from rapidocr_onnxruntime import RapidOCR
 from werkzeug.utils import secure_filename
 
 from backend.models.payroll import db
-from backend.routes.auth import UserAccount
+from backend.routes.auth import ADMIN_ROLES, UserAccount
 
 shipments_bp = Blueprint('shipments', __name__, url_prefix='/api/shipments')
 MAX_DOCUMENT_BYTES = 12 * 1024 * 1024
@@ -143,7 +143,7 @@ def get_request_user():
 
 
 def shipment_visible_to(shipment, user):
-    if user.role == 'admin':
+    if user.role in ADMIN_ROLES:
         return True
     if user.role == 'client':
         return bool(user.company_name and shipment.company_name and
@@ -404,7 +404,7 @@ def list_shipments():
     user = get_request_user()
     if not user:
         return jsonify({'status': 'error', 'message': 'User not found.'}), 401
-    if user.role not in {'client', 'driver', 'admin'}:
+    if user.role not in ({'client', 'driver'} | ADMIN_ROLES):
         return jsonify({'status': 'error', 'message': 'This account cannot access shipment tracking.'}), 403
 
     shipments = Shipment.query.order_by(Shipment.created_at.desc()).all()
@@ -418,7 +418,7 @@ def track_shipment(tracking_number):
     user = get_request_user()
     if not user:
         return jsonify({'status': 'error', 'message': 'User not found.'}), 401
-    if user.role not in {'client', 'driver', 'admin'}:
+    if user.role not in ({'client', 'driver'} | ADMIN_ROLES):
         return jsonify({'status': 'error', 'message': 'This account cannot access shipment tracking.'}), 403
 
     shipment = db.session.get(Shipment, tracking_number.strip().upper())
@@ -438,7 +438,7 @@ def track_shipment(tracking_number):
 @jwt_required()
 def authorize_imei(imei):
     user = get_request_user()
-    if not user or user.role not in {'client', 'driver', 'admin'}:
+    if not user or user.role not in ({'client', 'driver'} | ADMIN_ROLES):
         return jsonify({'status': 'error', 'message': 'Shipment access is not authorized.'}), 403
 
     shipment = Shipment.query.filter_by(imei=imei).first()
@@ -451,7 +451,7 @@ def authorize_imei(imei):
 @jwt_required()
 def update_shipment_assignment(tracking_number):
     admin = get_request_user()
-    if not admin or admin.role != 'admin':
+    if not admin or admin.role not in ADMIN_ROLES:
         return jsonify({'status': 'error', 'message': 'Admin access is required.'}), 403
 
     shipment = db.session.get(Shipment, tracking_number.strip().upper())
@@ -486,7 +486,7 @@ def update_shipment_assignment(tracking_number):
     if isinstance(driver_user_id, bool) or not isinstance(driver_user_id, int):
         return jsonify({'status': 'error', 'message': 'Select an assigned driver.'}), 400
     driver = db.session.get(UserAccount, driver_user_id)
-    if not driver or driver.role != 'driver':
+    if not driver or driver.role != 'driver' or driver.account_status != 'active':
         return jsonify({'status': 'error', 'message': 'The selected account is not an active driver account.'}), 400
 
     shipment.company_name = company_name
@@ -500,7 +500,7 @@ def update_shipment_assignment(tracking_number):
 @jwt_required()
 def update_shipment_status(tracking_number):
     user = get_request_user()
-    if not user or user.role not in {'admin', 'driver'}:
+    if not user or user.role not in (ADMIN_ROLES | {'driver'}):
         return jsonify({'status': 'error', 'message': 'Only the assigned driver or an Admin can update shipment status.'}), 403
 
     shipment = db.session.get(Shipment, tracking_number.strip().upper())
@@ -591,7 +591,7 @@ def update_shipment_status(tracking_number):
 @jwt_required()
 def upload_shipment_documents(tracking_number):
     user = get_request_user()
-    if not user or user.role not in {'driver', 'admin'}:
+    if not user or user.role not in ({'driver'} | ADMIN_ROLES):
         return jsonify({'status': 'error', 'message': 'Only the assigned driver or an Admin may upload shipment documents.'}), 403
 
     shipment = db.session.get(Shipment, tracking_number.strip().upper())
@@ -757,7 +757,7 @@ def list_shipment_documents(tracking_number):
     user = get_request_user()
     if not user or user.role == 'driver':
         return jsonify({'status': 'error', 'message': 'Drivers cannot view shipment document files.'}), 403
-    if user.role not in {'client', 'admin'}:
+    if user.role not in ({'client'} | ADMIN_ROLES):
         return jsonify({'status': 'error', 'message': 'Document access is not authorized.'}), 403
 
     shipment = db.session.get(Shipment, tracking_number.strip().upper())
@@ -775,7 +775,7 @@ def download_shipment_document(tracking_number, document_id):
     user = get_request_user()
     if not user or user.role == 'driver':
         return jsonify({'status': 'error', 'message': 'Drivers cannot download shipment documents.'}), 403
-    if user.role not in {'client', 'admin'}:
+    if user.role not in ({'client'} | ADMIN_ROLES):
         return jsonify({'status': 'error', 'message': 'Document download is not authorized.'}), 403
 
     shipment = db.session.get(Shipment, tracking_number.strip().upper())

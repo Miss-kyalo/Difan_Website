@@ -86,14 +86,13 @@ document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initDashboardMetrics();
     initFreightCalculator();
+    initQuoteBuilder();
     initRoleSwitcher();
     initIncidentTable();
     initQuickSearch();
-    initCommunityFeed();
 
     window.addEventListener('difan:session-ready', () => {
         initDashboardMetrics();
-        if (typeof renderCommunityFeed === 'function') renderCommunityFeed();
     });
 
     // --- NAVIGATION ROUTER ---
@@ -267,40 +266,143 @@ document.addEventListener('DOMContentLoaded', () => {
         win.document.close();
     }
 
+    function renderQuote(resultBox, title, breakdown) {
+        resultBox.replaceChildren();
+        const heading = document.createElement('h4');
+        heading.textContent = title;
+        resultBox.appendChild(heading);
+        breakdown.forEach(([label, value]) => {
+            const line = document.createElement('p');
+            line.textContent = `${label}: ${value}`;
+            resultBox.appendChild(line);
+        });
+        resultBox.style.display = 'block';
+    }
+
+    async function calculateQuote(service, amount, resultBox) {
+        if (service === '20ft' || service === '40ft') {
+            const token = localStorage.getItem('jwt_token');
+            if (!Number.isInteger(amount) || amount < 1 || amount > 100) {
+                throw new Error('Enter a container quantity between 1 and 100.');
+            }
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers.Authorization = `Bearer ${token}`;
+            const response = await fetch('http://localhost:5000/api/portal/container-quote', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ size: service, quantity: amount }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || 'Unable to calculate the container quote.');
+            const quote = data.quote;
+            renderQuote(resultBox, `${amount} × ${quote.size} container quote`, [
+                ['VAT-exclusive total', window.DifanApp.formatCurrency(quote.total_kes)],
+                ['Estimated VAT (16%)', window.DifanApp.formatCurrency(quote.vat_amount_kes)],
+                ['Estimated VAT-inclusive total', window.DifanApp.formatCurrency(quote.total_including_vat_kes)],
+            ]);
+            return;
+        }
+
+        const origin = document.getElementById('calc-origin')?.value;
+        const destination = document.getElementById('calc-destination')?.value;
+        if (!origin || !destination) {
+            throw new Error('Choose both an origin and destination.');
+        }
+        const tonnage = Number(amount);
+        if (!Number.isFinite(tonnage) || tonnage < 1 || tonnage > 100) {
+            throw new Error('Enter a valid cargo weight between 1 and 100 tonnes.');
+        }
+        const corridors = {
+            'Athi River-Mombasa': { km: 480, rate: 14 },
+            'Athi River-Kisumu': { km: 355, rate: 16 },
+            'Athi River-Malaba': { km: 440, rate: 15 },
+            'Athi River-Nakuru': { km: 160, rate: 18 },
+        };
+        const route = corridors[`${origin}-${destination}`] || { km: 300, rate: 15 };
+        const freight = route.km * tonnage * route.rate;
+        const totalExcludingVat = Math.round(freight + (freight * 0.05) + 3500);
+        const vatAmount = Math.round(totalExcludingVat * 0.16);
+        renderQuote(resultBox, `Freight quote: ${origin} to ${destination}`, [
+            ['Distance and load', `${route.km} km · ${tonnage} tonnes`],
+            ['VAT-exclusive total', window.DifanApp.formatCurrency(totalExcludingVat)],
+            ['Estimated VAT (16%)', window.DifanApp.formatCurrency(vatAmount)],
+            ['Estimated VAT-inclusive total', window.DifanApp.formatCurrency(totalExcludingVat + vatAmount)],
+        ]);
+    }
+
     // --- FREIGHT CORRIDOR QUOTATION CALCULATOR ---
     function initFreightCalculator() {
         const calcForm = document.getElementById('freight-calc-form');
         if (!calcForm) return;
 
-        calcForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const origin = document.getElementById('calc-origin').value;
-            const destination = document.getElementById('calc-destination').value;
-            const tonnage = parseFloat(document.getElementById('calc-tonnage').value) || 30;
+        const serviceSelect = document.getElementById('calc-quote-service');
+        const tonnageField = document.getElementById('calc-tonnage-field');
+        const quantityField = document.getElementById('calc-container-quantity-field');
+        const resultBox = document.getElementById('calc-result-output');
+        const submitButton = calcForm.querySelector('button[type="submit"]');
 
-            const corridors = {
-                "Athi River-Mombasa": { km: 480, rate: 14 },
-                "Athi River-Kisumu": { km: 355, rate: 16 },
-                "Athi River-Malaba": { km: 440, rate: 15 },
-                "Athi River-Nakuru": { km: 160, rate: 18 }
-            };
+        function updateQuoteInputs() {
+            const isContainer = serviceSelect.value === '20ft' || serviceSelect.value === '40ft';
+            tonnageField.hidden = isContainer;
+            quantityField.hidden = !isContainer;
+            document.getElementById('calc-tonnage').required = !isContainer;
+            document.getElementById('calc-container-quantity').required = isContainer;
+            resultBox.style.display = 'none';
+            resultBox.replaceChildren();
+        }
 
-            const route = corridors[`${origin}-${destination}`] || { km: 300, rate: 15 };
-            const freight = route.km * tonnage * route.rate;
-            const total = freight + (freight * 0.05) + 3500;
-
-            const resultBox = document.getElementById('calc-result-output');
-            if (resultBox) {
-                resultBox.style.display = 'block';
-                resultBox.innerHTML = `
-                    <div style="background: #efebe1; border: 1px solid #d8d3c8; padding: 1rem; border-radius: 4px;">
-                        <h4 style="margin: 0 0 6px 0; color: #1b3b2b;">🚚 Freight Quote: ${origin} to ${destination}</h4>
-                        <p style="margin: 2px 0;">Distance: <strong>${route.km} KM</strong> | Load: <strong>${tonnage} Tonnes</strong></p>
-                        <p style="margin: 2px 0; font-size: 1.1rem; font-weight: bold; color: #2a5a3b;">Total Quote: ${window.DifanApp.formatCurrency(total)}</p>
-                    </div>
-                `;
+        serviceSelect.addEventListener('change', updateQuoteInputs);
+        updateQuoteInputs();
+        calcForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            submitButton.disabled = true;
+            resultBox.replaceChildren();
+            try {
+                const service = serviceSelect.value;
+                const amount = service === '20ft' || service === '40ft'
+                    ? Number(document.getElementById('calc-container-quantity').value)
+                    : Number(document.getElementById('calc-tonnage').value);
+                await calculateQuote(service, amount, resultBox);
+                if (service === 'freight') window.DifanApp.showToast('Freight quotation calculated!');
+            } catch (error) {
+                renderQuote(resultBox, 'Quote unavailable', [['Details', error.message || 'Please try again.']]);
+            } finally {
+                submitButton.disabled = false;
             }
-            window.DifanApp.showToast("Freight quotation calculated!");
+        });
+    }
+
+    function initQuoteBuilder() {
+        const form = document.getElementById('uber-booking-form');
+        if (!form) return;
+        const serviceSelect = document.getElementById('tonnage-select');
+        const quantityField = document.getElementById('booking-container-quantity-field');
+        const quantityInput = document.getElementById('booking-container-quantity');
+        const resultBox = document.getElementById('booking-quote-box');
+        const submitButton = form.querySelector('button[type="submit"]');
+
+        function updateContainerQuantityVisibility() {
+            const isContainer = ['20ft', '40ft'].includes(serviceSelect.value);
+            quantityField.hidden = !isContainer;
+            quantityInput.required = isContainer;
+        }
+
+        serviceSelect.addEventListener('change', updateContainerQuantityVisibility);
+        updateContainerQuantityVisibility();
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            submitButton.disabled = true;
+            const service = ['20ft', '40ft'].includes(serviceSelect.value) ? serviceSelect.value : 'freight';
+            const amount = service === 'freight'
+                ? Number(serviceSelect.value)
+                : Number(quantityInput.value);
+            try {
+                await calculateQuote(service, amount, resultBox);
+            } catch (error) {
+                renderQuote(resultBox, 'Quote unavailable', [['Details', error.message || 'Please try again.']]);
+            } finally {
+                submitButton.disabled = false;
+            }
         });
     }
 
@@ -318,101 +420,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.style.display = row.innerText.toLowerCase().includes(query) ? '' : 'none';
             });
         });
-    }
-
-    function initCommunityFeed() {
-        const form = document.getElementById('community-post-form');
-        const input = document.getElementById('community-post-input');
-        const feed = document.getElementById('community-feed');
-        if (!form || !input || !feed) return;
-
-        const posts = [
-            {
-                author: 'Difan Dispatch',
-                label: 'Operations',
-                content: 'Welcome to the Difan community. Share team milestones, safe-driving wins, and service updates here.',
-                time: 'Today',
-                appreciations: 8,
-            },
-            {
-                author: 'Fleet Team',
-                label: 'Team reminder',
-                content: 'A complete handover helps every team pick up smoothly. Record the receiving driver and goods condition whenever a load is transferred.',
-                time: 'Today',
-                appreciations: 5,
-            },
-        ];
-
-        function initials(name) {
-            return String(name || 'D')
-                .split(/\s+/)
-                .slice(0, 2)
-                .map(part => part[0] || '')
-                .join('')
-                .toUpperCase();
-        }
-
-        function renderCommunityFeed() {
-            feed.replaceChildren();
-            posts.forEach(post => {
-                const article = document.createElement('article');
-                article.className = 'community-post';
-
-                const header = document.createElement('div');
-                header.className = 'community-post-header';
-                const avatar = document.createElement('span');
-                avatar.className = 'community-avatar';
-                avatar.setAttribute('aria-hidden', 'true');
-                avatar.textContent = initials(post.author);
-                const identity = document.createElement('div');
-                const author = document.createElement('p');
-                author.className = 'community-post-author';
-                author.textContent = post.author;
-                const time = document.createElement('time');
-                time.className = 'community-post-time';
-                time.textContent = `${post.label} · ${post.time}`;
-                identity.append(author, time);
-                header.append(avatar, identity);
-
-                const content = document.createElement('p');
-                content.className = 'community-post-content';
-                content.textContent = post.content;
-
-                const actions = document.createElement('div');
-                actions.className = 'community-post-actions';
-                const appreciate = document.createElement('button');
-                appreciate.type = 'button';
-                appreciate.setAttribute('aria-pressed', post.liked ? 'true' : 'false');
-                appreciate.textContent = `${post.liked ? '★ Appreciated' : '☆ Appreciate'} · ${post.appreciations}`;
-                appreciate.addEventListener('click', () => {
-                    post.liked = !post.liked;
-                    post.appreciations += post.liked ? 1 : -1;
-                    renderCommunityFeed();
-                });
-                actions.appendChild(appreciate);
-                article.append(header, content, actions);
-                feed.appendChild(article);
-            });
-        }
-
-        form.addEventListener('submit', event => {
-            event.preventDefault();
-            const content = input.value.trim();
-            if (!content) return;
-            const currentUser = window.DifanApp.state.currentUser;
-            posts.unshift({
-                author: currentUser.name || 'Difan colleague',
-                label: currentUser.role === 'client' ? 'Client update' : 'Team update',
-                content,
-                time: 'Just now',
-                appreciations: 0,
-            });
-            input.value = '';
-            renderCommunityFeed();
-        });
-
-        window.renderCommunityFeed = renderCommunityFeed;
-        renderCommunityFeed();
     }
 
     console.log("Difan Logistics Core App Initialized with RBAC & Incident Tracking.");

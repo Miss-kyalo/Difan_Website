@@ -7,11 +7,12 @@ from dotenv import load_dotenv
 from backend.models.payroll import db
 from backend.routes.auth import auth_bp, bcrypt, jwt
 from backend.routes.hr import hr_bp
+from backend.routes.portal import portal_bp
 from backend.routes.shipments import shipments_bp, seed_demo_shipment
 from backend.routes.telematics import telematics_bp
 
 
-def create_app():
+def create_app(test_config=None):
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     load_dotenv(os.path.join(project_root, '.env'))
     instance_path = os.path.join(project_root, 'instance')
@@ -23,7 +24,7 @@ def create_app():
 
     CORS(app)
 
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or secrets.token_urlsafe(48)
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or os.getenv('FLASK_SECRET_KEY') or secrets.token_urlsafe(48)
     app.config['JWT_SECRET_KEY'] = app.config['SECRET_KEY']
 
     db_path = os.path.join(app.instance_path, 'database.db')
@@ -33,6 +34,9 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['MAX_CONTENT_LENGTH'] = 128 * 1024 * 1024
     app.config['SHIPMENT_DOCUMENTS_DIR'] = os.path.join(app.instance_path, 'shipment_documents')
+    app.config['ANONYMOUS_REPORTS_DIR'] = os.path.join(app.instance_path, 'anonymous_reports')
+    if test_config:
+        app.config.update(test_config)
 
     db.init_app(app)
     bcrypt.init_app(app)
@@ -40,6 +44,7 @@ def create_app():
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(hr_bp)
+    app.register_blueprint(portal_bp)
     app.register_blueprint(shipments_bp)
     app.register_blueprint(telematics_bp)
 
@@ -58,6 +63,18 @@ def create_app():
             if 'display_name' not in user_columns:
                 connection.execute(text(
                     "ALTER TABLE user_accounts ADD COLUMN display_name VARCHAR(120)"
+                ))
+            if 'account_status' not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE user_accounts ADD COLUMN account_status VARCHAR(20) NOT NULL DEFAULT 'active'"
+                ))
+            if 'approved_by_id' not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE user_accounts ADD COLUMN approved_by_id INTEGER REFERENCES user_accounts(id)"
+                ))
+            if 'approved_at' not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE user_accounts ADD COLUMN approved_at DATETIME"
                 ))
             connection.execute(text(
                 "UPDATE user_accounts SET role = 'admin' "

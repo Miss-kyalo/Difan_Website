@@ -189,35 +189,273 @@
         .tracking-action-button { width: 100%; }
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-CXklselb.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-C24NbNlM.css">
+    <script type="module" crossorigin src="/assets/index-CIoIx-4T.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CDo3IytP.css">
   </head>
   <body>
-    <div id="login-screen" class="login-shell">
+    <div id="public-home" class="public-home">
+      <header class="public-header">
+        <a class="public-brand" href="#" aria-label="Difan Logistics home">DIFAN <span>LOGISTICS</span></a>
+        <div class="public-header-actions">
+          <button class="btn btn-secondary" type="button" data-open-employee-signup>Employee registration</button>
+          <button class="btn btn-secondary" type="button" data-open-signup>Client sign up</button>
+          <button class="btn btn-primary" type="button" data-open-login>Portal sign in</button>
+        </div>
+      </header>
+      <main>
+        <section class="public-hero">
+          <div class="public-hero-copy">
+            <p class="public-eyebrow">Freight • Fleet • Container services</p>
+            <h1>Moving business forward, with care at every mile.</h1>
+            <p class="public-lead">Difan Logistics delivers dependable cargo transport and practical container services for businesses across Kenya.</p>
+            <div class="public-hero-actions">
+              <a class="btn btn-secondary public-cta" href="#public-quote">Calculate quote</a>
+              <button class="btn btn-primary public-cta" type="button" data-open-login>Access your Difan account</button>
+              <button class="btn btn-secondary public-cta" type="button" data-open-signup>Open a client account</button>
+            </div>
+          </div>
+          <div class="public-hero-photo">
+            <img src="https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=1200&amp;auto=format&amp;fit=crop&amp;q=80" alt="Freight truck travelling on a highway" />
+            <div class="public-hero-note" aria-label="Our logistics promise">
+              <span class="public-note-mark">D</span>
+              <p>Reliable transport.<br />Responsible handling.<br />Service built around your cargo.</p>
+            </div>
+          </div>
+        </section>
+        <section id="public-quote" class="public-quote-section" aria-labelledby="public-quote-heading">
+          <div class="public-section-heading">
+            <p class="public-eyebrow">Plan your next load</p>
+            <h2 id="public-quote-heading">Calculate a freight or container quote</h2>
+            <p>Get an estimate without signing in. Prices are VAT-exclusive; the estimate also shows 16% VAT.</p>
+          </div>
+          <form id="public-quote-form" class="public-quote-form">
+            <div class="public-quote-fields">
+              <div class="field">
+                <label for="public-quote-service">Service</label>
+                <select id="public-quote-service" required>
+                  <option value="freight">Truck freight</option>
+                  <option value="20ft">20 ft container</option>
+                  <option value="40ft">40 ft container</option>
+                </select>
+              </div>
+              <div id="public-quote-origin-field" class="field">
+                <label for="public-quote-origin">Origin</label>
+                <select id="public-quote-origin">
+                  <option value="Athi River">Athi River</option>
+                  <option value="Mombasa">Mombasa</option>
+                  <option value="Kisumu">Kisumu</option>
+                  <option value="Malaba">Malaba</option>
+                  <option value="Nakuru">Nakuru</option>
+                </select>
+              </div>
+              <div id="public-quote-destination-field" class="field">
+                <label for="public-quote-destination">Destination</label>
+                <select id="public-quote-destination">
+                  <option value="Mombasa">Mombasa</option>
+                  <option value="Kisumu">Kisumu</option>
+                  <option value="Malaba">Malaba</option>
+                  <option value="Nakuru">Nakuru</option>
+                  <option value="Athi River">Athi River</option>
+                </select>
+              </div>
+              <div id="public-quote-tonnage-field" class="field">
+                <label for="public-quote-tonnage">Cargo weight (tonnes)</label>
+                <input id="public-quote-tonnage" type="number" min="1" max="100" step="1" value="1" required />
+              </div>
+              <div id="public-quote-quantity-field" class="field" hidden>
+                <label for="public-quote-quantity">Number of containers</label>
+                <input id="public-quote-quantity" type="number" min="1" max="100" step="1" value="1" />
+              </div>
+            </div>
+            <button class="btn btn-primary" type="submit">Calculate quote</button>
+            <div id="public-quote-result" class="quote-box" role="status" aria-live="polite"></div>
+          </form>
+        </section>
+        <section class="public-services" aria-labelledby="services-heading">
+          <div class="public-section-heading">
+            <p class="public-eyebrow">What we do</p>
+            <h2 id="services-heading">Logistics solutions for every load</h2>
+            <p>From everyday freight to specialist container care, our services are designed to keep your operation moving.</p>
+          </div>
+          <div class="public-service-grid">
+            <article class="public-service-card">
+              <span class="public-service-number">01</span>
+              <img class="public-service-image" src="https://images.unsplash.com/photo-1494412519320-aa613dfb7738?w=900&amp;auto=format&amp;fit=crop&amp;q=80" alt="Freight containers ready for transport" loading="eager" />
+              <h3>Container &amp; dry cargo transport</h3>
+              <p>Secure movement of shipping containers and dry goods, supported by clear coordination from dispatch to delivery.</p>
+            </article>
+            <article class="public-service-card">
+              <span class="public-service-number">02</span>
+              <img class="public-service-image" src="https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=900&amp;auto=format&amp;fit=crop&amp;q=80" alt="Heavy freight truck on the road" loading="eager" />
+              <h3>A fleet for varied freight</h3>
+              <p>Capacity options include tippers, trailers and 15-tonne trucks to suit construction, commercial and general cargo.</p>
+            </article>
+            <article class="public-service-card">
+              <span class="public-service-number">03</span>
+              <h3>Container storage &amp; cleaning</h3>
+              <p>Practical container storage and professional cleaning services to help keep units in suitable condition between movements.</p>
+            </article>
+          </div>
+        </section>
+        <section class="public-report-invite" aria-labelledby="public-report-heading">
+          <div>
+            <p class="public-eyebrow">Speak up safely</p>
+            <h2 id="public-report-heading">Report a concern anonymously.</h2>
+            <p>You can include a written description, images, video, or a recorded voice note. Only the Boss can view reports.</p>
+          </div>
+          <button class="btn btn-primary" type="button" data-open-public-report>Make an anonymous report</button>
+        </section>
+        <section class="public-contact" aria-labelledby="public-contact-heading">
+          <div>
+            <p class="public-eyebrow">Speak to us</p>
+            <h2 id="public-contact-heading">Let’s move your next load.</h2>
+            <div class="public-contact-details">
+              <a href="mailto:info@difan-logistocs.com">info@difan-logistocs.com</a>
+              <div class="public-contact-phones" aria-label="Call Difan Logistics">
+                <a href="tel:0720778812">0720778812</a>
+                <a href="tel:0720253922">0720253922</a>
+                <a href="tel:0790979993">0790979993</a>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-secondary" type="button" data-open-login>Sign in to continue</button>
+        </section>
+      </main>
+      <footer class="public-footer">Difan Logistics · Dependable freight and container services</footer>
+    </div>
+
+    <dialog id="public-report-dialog" class="report-dialog">
+      <div class="report-dialog-header">
+        <div>
+          <p class="profile-eyebrow">Confidential channel</p>
+          <h2>Anonymous report</h2>
+        </div>
+        <button class="btn btn-secondary" type="button" data-close-public-report>Close</button>
+      </div>
+      <form class="anonymous-report-form" data-anonymous-report-form>
+        <label for="public-report-description">What would you like to report?</label>
+        <textarea id="public-report-description" name="description" rows="5" maxlength="5000" placeholder="Describe the concern without including your name if you wish."></textarea>
+        <label for="public-report-attachments">Attach images, video, or a voice recording</label>
+        <input id="public-report-attachments" name="attachments" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm,.m4a,.mp3,.wav,.ogg,.opus,image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/webm,audio/ogg,audio/mpeg,audio/wav,audio/mp4" />
+        <div class="report-record-controls">
+          <button class="btn btn-secondary" type="button" data-record-voice>Record voice note</button>
+          <span data-recording-status role="status" aria-live="polite">No voice note recorded.</span>
+        </div>
+        <p class="muted">Up to 5 attachments, 15 MB each. Your account identity is not collected with a report.</p>
+        <button class="btn btn-primary" type="submit">Submit anonymously</button>
+        <p class="muted" data-report-status role="status" aria-live="polite"></p>
+      </form>
+    </dialog>
+
+    <div id="login-screen" class="login-shell" style="display:none;">
       <div class="login-card">
+        <button class="login-home-link" type="button" data-open-home>← Back to Difan Logistics</button>
         <h1>Difan <span>Logistics</span></h1>
-        <p>Access fleet tracking and logistics management</p>
+        <p>Sign in to your assigned Difan portal</p>
         <div id="login-error" class="login-error"></div>
 
         <form id="login-form">
           <div class="login-field">
+            <label for="login-role">Portal</label>
+            <select id="login-role" required>
+              <option value="">Select your assigned portal</option>
+              <option value="client">Client</option>
+              <option value="driver">Driver</option>
+              <option value="accountant">Accounts</option>
+              <option value="admin">Admin</option>
+              <option value="hr">HR</option>
+              <option value="boss">Boss</option>
+              <option value="mechanic">Mechanic</option>
+            </select>
+          </div>
+          <div class="login-field">
             <label for="login-email">Email Address</label>
-            <input id="login-email" type="email" value="admin@difanlogistics.com" placeholder="admin@difanlogistics.com" required />
+            <input id="login-email" type="email" placeholder="name@company.com" required />
           </div>
           <div class="login-field">
             <label for="login-password">Password</label>
-            <input id="login-password" type="password" value="AdminSecurePassword123!" placeholder="••••••••••••" required />
+            <input id="login-password" type="password" autocomplete="current-password" placeholder="Enter your password" required />
           </div>
 
           <label style="display:flex; align-items:center; gap:10px; color:#5a6560; font-size:13px;">
             <input id="remember-me" type="checkbox" />
-            Remember me and save password
+            Remember email on this device
           </label>
 
           <button id="login-submit" class="login-btn" type="submit">Sign In</button>
         </form>
+        <p class="login-secondary-action">New to Difan? <button type="button" data-open-signup>Create a client account</button> or <button type="button" data-open-employee-signup>register as an employee</button></p>
+      </div>
+    </div>
 
-        <div class="login-note">Demo admin account: admin@difanlogistics.com / AdminSecurePassword123!</div>
+    <div id="signup-screen" class="login-shell" style="display:none;">
+      <div class="login-card">
+        <button class="login-home-link" type="button" data-open-home>← Back to Difan Logistics</button>
+        <h1>Client <span>Registration</span></h1>
+        <p>Create an account to request freight quotes and access client shipment services.</p>
+        <div id="signup-message" class="login-error" role="status" aria-live="polite"></div>
+        <form id="signup-form">
+          <div class="login-field">
+            <label for="signup-company">Company name</label>
+            <input id="signup-company" type="text" maxlength="120" autocomplete="organization" required />
+          </div>
+          <div class="login-field">
+            <label for="signup-email">Email address</label>
+            <input id="signup-email" type="email" maxlength="120" autocomplete="email" required />
+          </div>
+          <div class="login-field">
+            <label for="signup-password">Create password</label>
+            <input id="signup-password" type="password" minlength="12" autocomplete="new-password" required />
+          </div>
+          <div class="login-field">
+            <label for="signup-password-confirm">Confirm password</label>
+            <input id="signup-password-confirm" type="password" minlength="12" autocomplete="new-password" required />
+          </div>
+          <button id="signup-submit" class="login-btn" type="submit">Create client account</button>
+        </form>
+        <p class="login-secondary-action">Already registered? <button type="button" data-open-login>Sign in</button></p>
+        <p class="login-secondary-action">Employee? <button type="button" data-open-employee-signup>Register for HR approval</button></p>
+        <p class="login-note">Employee applications are reviewed by HR before sign-in is enabled.</p>
+      </div>
+    </div>
+
+    <div id="employee-signup-screen" class="login-shell" style="display:none;">
+      <div class="login-card">
+        <button class="login-home-link" type="button" data-open-home>← Back to Difan Logistics</button>
+        <h1>Employee <span>Registration</span></h1>
+        <p>Submit your details to HR. Sign-in is enabled after approval.</p>
+        <div id="employee-signup-message" class="login-error" role="status" aria-live="polite"></div>
+        <form id="employee-signup-form">
+          <div class="login-field">
+            <label for="employee-signup-name">Full name</label>
+            <input id="employee-signup-name" type="text" maxlength="120" autocomplete="name" required />
+          </div>
+          <div class="login-field">
+            <label for="employee-signup-role">Employee role</label>
+            <select id="employee-signup-role" required>
+              <option value="">Choose your role</option>
+              <option value="driver">Driver</option>
+              <option value="mechanic">Mechanic</option>
+              <option value="admin">Admin</option>
+              <option value="accountant">Accounts</option>
+              <option value="hr">HR</option>
+            </select>
+          </div>
+          <div class="login-field">
+            <label for="employee-signup-email">Email address</label>
+            <input id="employee-signup-email" type="email" maxlength="120" autocomplete="email" required />
+          </div>
+          <div class="login-field">
+            <label for="employee-signup-password">Create password</label>
+            <input id="employee-signup-password" type="password" minlength="12" autocomplete="new-password" required />
+          </div>
+          <div class="login-field">
+            <label for="employee-signup-password-confirm">Confirm password</label>
+            <input id="employee-signup-password-confirm" type="password" minlength="12" autocomplete="new-password" required />
+          </div>
+          <button id="employee-signup-submit" class="login-btn" type="submit">Submit for HR approval</button>
+        </form>
+        <p class="login-secondary-action">Already approved? <button type="button" data-open-login>Sign in</button></p>
       </div>
     </div>
 
@@ -232,9 +470,15 @@
             <a href="#" id="goods-navigation" class="nav-link" data-target-tab="goods">Goods</a>
             <a href="#" class="nav-link" data-target-tab="tracking">Tracking</a>
             <a href="#" id="fleet-navigation" class="nav-link" data-target-tab="fleet">Fleet</a>
-            <a href="#" class="nav-link" data-target-tab="finance">Finance</a>
+            <a href="#" id="finance-navigation" class="nav-link" data-target-tab="finance">Finance</a>
+            <a href="#" id="messages-navigation" class="nav-link" data-target-tab="messages" hidden>Messages</a>
+            <a href="#" id="employees-navigation" class="nav-link" data-target-tab="employees" hidden>Employees</a>
+            <a href="#" id="reports-navigation" class="nav-link" data-target-tab="reports" hidden>Reports</a>
           </nav>
-          <div id="current-user-badge" class="user-badge">Mary Wambui (ACCOUNTANT)</div>
+          <div class="header-account-actions">
+            <div id="current-user-badge" class="user-badge">Mary Wambui</div>
+            <button id="logout-button" class="btn btn-secondary" type="button">Log out</button>
+          </div>
         </div>
       </header>
 
@@ -251,6 +495,10 @@
               <option value="client">Client Portal</option>
               <option value="driver">Driver Portal</option>
               <option value="admin">Admin Portal</option>
+              <option value="hr">HR Portal</option>
+              <option value="accountant">Accounts Portal</option>
+              <option value="boss">Boss Portal</option>
+              <option value="mechanic">Mechanic Portal</option>
             </select>
           </div>
 
@@ -289,51 +537,213 @@
             </dl>
           </section>
 
-          <section class="dashboard-community">
+          <section id="dashboard-community-section" class="dashboard-community" hidden>
             <div class="community-cover">
               <div>
-                <p class="profile-eyebrow">Difan community</p>
-                <h2>Logistics, in good company.</h2>
-                <p>Updates, milestones, and conversations from across your Difan network.</p>
+                <p class="profile-eyebrow">Difan client desk</p>
+                <h2>Service notices and private support.</h2>
+                <p>Important updates for clients, with a secure direct channel to the Difan team.</p>
               </div>
               <span class="community-cover-mark" aria-hidden="true">D</span>
             </div>
             <div class="community-highlights" aria-label="Community channels">
-              <span><i>✦</i> Operations</span>
-              <span><i>↗</i> Dispatch notes</span>
-              <span><i>◎</i> Milestones</span>
+              <span><i>✦</i> Client notices</span>
+              <span><i>↗</i> Private messages</span>
+              <span><i>◎</i> Difan support</span>
             </div>
-            <div class="community-layout">
+            <div id="client-community-view" class="community-layout" hidden>
               <div class="community-feed-column">
-                <form id="community-post-form" class="community-composer">
-                  <label for="community-post-input">Share an update with your network</label>
-                  <textarea id="community-post-input" rows="3" maxlength="500" placeholder="Write a short update..."></textarea>
+                <section class="community-side-card">
+                  <p class="profile-eyebrow">Noticeboard</p>
+                  <h3>Updates from Difan</h3>
+                  <p>Operational information and service notices shared by Admin, HR, and Accounts.</p>
+                </section>
+                <p id="client-notice-status" class="muted" role="status" aria-live="polite"></p>
+                <div id="client-notice-feed" class="community-feed" aria-live="polite"></div>
+              </div>
+              <aside class="community-sidebar">
+                <section class="community-side-card client-message-panel">
+                  <p class="profile-eyebrow">Direct message</p>
+                  <h3>Need help?</h3>
+                  <p>Open your private message page to contact an Admin, HR, or Accounts team member.</p>
+                  <button class="btn btn-secondary" type="button" data-target-tab="messages">Open Messages</button>
+                </section>
+              </aside>
+            </div>
+            <div id="staff-community-view" class="staff-community-layout" hidden>
+              <div class="community-feed-column">
+                <form id="client-notice-form" class="community-composer">
+                  <label for="client-notice-title">Publish a notice to client dashboards</label>
+                  <input id="client-notice-title" type="text" maxlength="120" required placeholder="Notice title" />
+                  <textarea id="client-notice-body" rows="4" maxlength="2000" required placeholder="Write a clear service notice..."></textarea>
                   <div class="community-composer-footer">
-                    <span>Keep shipment references and personal details private.</span>
-                    <button class="btn btn-primary" type="submit">Post update</button>
+                    <span>Notices are visible to client accounts only.</span>
+                    <button class="btn btn-primary" type="submit">Publish notice</button>
                   </div>
                 </form>
-                <div id="community-feed" class="community-feed" aria-live="polite"></div>
+                <p id="staff-notice-status" class="muted" role="status" aria-live="polite"></p>
+                <div id="staff-notice-feed" class="community-feed" aria-live="polite"></div>
               </div>
               <aside class="community-sidebar">
                 <section class="community-side-card">
-                  <p class="profile-eyebrow">Noticeboard</p>
-                  <h3>Good work travels.</h3>
-                  <p>Use this space for team wins, safe-driving reminders, and service updates.</p>
-                </section>
-                <section class="community-side-card community-guideline">
-                  <p class="profile-eyebrow">A thoughtful network</p>
-                  <h3>Before you post</h3>
-                  <ul>
-                    <li>Celebrate safe and reliable service.</li>
-                    <li>Keep customer and shipment details in the secure tracking area.</li>
-                    <li>Use dispatch channels for operational handovers.</li>
-                  </ul>
+                  <p class="profile-eyebrow">Client inbox</p>
+                  <h3>Private conversations</h3>
+                  <p>Open your private inbox to reply to clients who messaged your account.</p>
+                  <button id="staff-inbox-button" class="btn btn-secondary" type="button" data-target-tab="messages">Open client inbox</button>
                 </section>
               </aside>
             </div>
           </section>
+          <section class="rounded-box anonymous-report-card">
+            <div class="card-header">
+              <div>
+                <p class="profile-eyebrow">Confidential channel</p>
+                <h2>Report a concern anonymously</h2>
+                <p class="muted">Available to every portal role. Reports and attachments can only be accessed by the Boss.</p>
+              </div>
+            </div>
+            <form class="anonymous-report-form" data-anonymous-report-form>
+              <label for="portal-report-description">What would you like to report?</label>
+              <textarea id="portal-report-description" name="description" rows="4" maxlength="5000" placeholder="Describe the concern without including your name if you wish."></textarea>
+              <label for="portal-report-attachments">Attach images, video, or a voice recording</label>
+              <input id="portal-report-attachments" name="attachments" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm,.m4a,.mp3,.wav,.ogg,.opus,image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/webm,audio/ogg,audio/mpeg,audio/wav,audio/mp4" />
+              <div class="report-record-controls">
+                <button class="btn btn-secondary" type="button" data-record-voice>Record voice note</button>
+                <span data-recording-status role="status" aria-live="polite">No voice note recorded.</span>
+              </div>
+              <p class="muted">Up to 5 attachments, 15 MB each. Your account identity is not collected with a report.</p>
+              <button class="btn btn-primary" type="submit">Submit anonymously</button>
+              <p class="muted" data-report-status role="status" aria-live="polite"></p>
+            </form>
+          </section>
 
+        </div>
+
+        <div id="view-messages" class="tab-view" hidden>
+          <section class="rounded-box messages-page">
+            <div class="card-header">
+              <div>
+                <p class="profile-eyebrow">Private support</p>
+                <h2>Messages</h2>
+                <p class="muted">Conversations are private to the client and the selected Admin, HR, or Accounts contact.</p>
+              </div>
+            </div>
+            <div id="client-messages-view" class="messages-layout" hidden>
+              <aside class="community-side-card client-message-panel">
+                <p class="profile-eyebrow">Client inbox</p>
+                <h3>Start a conversation</h3>
+                <form id="client-start-conversation-form" class="client-message-start">
+                  <label for="client-message-role">Choose a role</label>
+                  <select id="client-message-role" required>
+                    <option value="">Choose Admin, HR, or Accounts</option>
+                    <option value="admin">Admin</option>
+                    <option value="hr">HR</option>
+                    <option value="accountant">Accounts</option>
+                  </select>
+                  <label for="client-message-contact">Difan contact</label>
+                  <select id="client-message-contact" required disabled>
+                    <option value="">Choose a role first</option>
+                  </select>
+                  <button class="btn btn-secondary" type="submit">Start conversation</button>
+                </form>
+                <h4>Your conversations</h4>
+                <div id="client-conversation-list" class="client-conversation-list"></div>
+              </aside>
+              <section class="client-message-panel">
+                <h3 id="client-thread-title">Select a conversation</h3>
+                <div id="client-message-thread" class="client-message-thread" aria-live="polite"></div>
+                <form id="client-message-form" class="client-message-compose" hidden>
+                  <label for="client-message-input">Message</label>
+                  <textarea id="client-message-input" rows="3" maxlength="2000" required placeholder="Write a private message..."></textarea>
+                  <button class="btn btn-primary" type="submit">Send message</button>
+                </form>
+                <p id="client-message-status" class="muted" role="status" aria-live="polite"></p>
+              </section>
+            </div>
+            <div id="staff-messages-view" class="messages-layout" hidden>
+              <aside class="community-side-card client-message-panel">
+                <p class="profile-eyebrow">Client inbox</p>
+                <h3>Conversations</h3>
+                <p>Only clients who contacted your account appear here.</p>
+                <div id="staff-conversation-list" class="client-conversation-list"></div>
+              </aside>
+              <section class="client-message-panel">
+                <h3 id="staff-thread-title">Select a client conversation</h3>
+                <div id="staff-message-thread" class="client-message-thread" aria-live="polite"></div>
+                <form id="staff-message-form" class="client-message-compose" hidden>
+                  <label for="staff-message-input">Reply to client</label>
+                  <textarea id="staff-message-input" rows="3" maxlength="2000" required placeholder="Write a reply..."></textarea>
+                  <button class="btn btn-primary" type="submit">Send reply</button>
+                </form>
+                <p id="staff-message-status" class="muted" role="status" aria-live="polite"></p>
+              </section>
+            </div>
+          </section>
+        </div>
+
+        <div id="view-reports" class="tab-view" hidden>
+          <section class="rounded-box boss-report-page">
+            <div class="card-header">
+              <div>
+                <p class="profile-eyebrow">Boss access only</p>
+                <h2>Anonymous reports</h2>
+                <p class="muted">Reports are submitted without account identity. Only this Boss portal can view report details and attachments.</p>
+              </div>
+              <button id="refresh-anonymous-reports" class="btn btn-secondary" type="button">Refresh reports</button>
+            </div>
+            <p id="anonymous-reports-status" class="tracking-status" role="status" aria-live="polite">Reports load when this page is opened.</p>
+            <div id="anonymous-report-list" class="workflow-records"></div>
+          </section>
+        </div>
+
+        <div id="view-employees" class="tab-view" hidden>
+          <section class="rounded-box">
+            <div class="card-header">
+              <div>
+                <h2>Employee section</h2>
+                <p class="muted">Your employee account and Difan work portal.</p>
+              </div>
+            </div>
+            <dl class="profile-details">
+              <div><dt>Employee name</dt><dd id="employee-section-name"></dd></div>
+              <div><dt>Role</dt><dd id="employee-section-role"></dd></div>
+              <div><dt>Email</dt><dd id="employee-section-email"></dd></div>
+              <div><dt>Account status</dt><dd id="employee-section-status"></dd></div>
+            </dl>
+          </section>
+          <section id="hr-approval-panel" class="rounded-box" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Employee registration approvals</h2>
+                <p class="muted">Approve employee applications before their first sign-in.</p>
+              </div>
+              <button id="refresh-employee-registrations" class="btn btn-secondary" type="button">Refresh</button>
+            </div>
+            <div id="employee-registration-status" class="tracking-status" role="status" aria-live="polite"></div>
+            <div id="employee-registration-list" class="workflow-records"></div>
+          </section>
+          <section id="container-rate-admin" class="rounded-box" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Container quote rates</h2>
+                <p class="muted">Set the fixed VAT-exclusive rate per container used in the quote calculator.</p>
+              </div>
+            </div>
+            <form id="container-rate-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field">
+                  <label for="container-rate-20ft">20 ft container rate (KES)</label>
+                  <input id="container-rate-20ft" type="number" min="0.01" max="10000000" step="0.01" required />
+                </div>
+                <div class="field">
+                  <label for="container-rate-40ft">40 ft container rate (KES)</label>
+                  <input id="container-rate-40ft" type="number" min="0.01" max="10000000" step="0.01" required />
+                </div>
+              </div>
+              <button class="btn btn-primary" type="submit">Save container rates</button>
+            </form>
+            <div id="container-rate-status" class="tracking-status" role="status" aria-live="polite"></div>
+          </section>
         </div>
 
         <div id="view-breakdowns" class="tab-view">
@@ -418,6 +828,25 @@
         </div>
 
         <div id="view-goods" class="tab-view">
+          <section id="goods-delivery-browser" class="rounded-box">
+            <div class="card-header">
+              <div>
+                <h2>Client deliveries</h2>
+                <p class="muted">Choose a client account, then select an assigned shipment to view its delivery records.</p>
+              </div>
+            </div>
+            <div class="workflow-grid">
+              <div class="field">
+                <label for="goods-company-select">Client account</label>
+                <select id="goods-company-select"></select>
+              </div>
+              <div class="field">
+                <label for="goods-delivery-select">Assigned delivery / shipment</label>
+                <select id="goods-delivery-select" disabled></select>
+              </div>
+            </div>
+            <div id="goods-delivery-details" class="workflow-records" aria-live="polite"></div>
+          </section>
           <section id="goods-document-upload-panel" class="rounded-box" hidden>
             <div class="card-header">
               <div>
@@ -524,6 +953,14 @@
             </div>
             <form id="freight-calc-form">
               <div class="field">
+                <label for="calc-quote-service">Quote service</label>
+                <select id="calc-quote-service">
+                  <option value="freight">Truck freight by tonnage</option>
+                  <option value="20ft">20 ft container</option>
+                  <option value="40ft">40 ft container</option>
+                </select>
+              </div>
+              <div class="field">
                 <label for="calc-origin">Origin</label>
                 <select id="calc-origin">
                   <option>Athi River</option>
@@ -541,10 +978,15 @@
                   <option>Nakuru</option>
                 </select>
               </div>
-              <div class="field">
+              <div id="calc-tonnage-field" class="field">
                 <label for="calc-tonnage">Tonnage</label>
                 <input id="calc-tonnage" type="number" value="30" min="1" max="100" />
               </div>
+              <div id="calc-container-quantity-field" class="field" hidden>
+                <label for="calc-container-quantity">Number of containers</label>
+                <input id="calc-container-quantity" type="number" value="1" min="1" max="100" step="1" />
+              </div>
+              <p class="quote-vat-disclaimer">Disclaimer: all quoted prices are exclusive of VAT. An estimated VAT-inclusive total is calculated separately at 16% VAT.</p>
               <button class="btn" type="submit">Calculate Quote</button>
             </form>
             <div id="calc-result-output" class="quote-box" style="display:none;"></div>
@@ -555,41 +997,25 @@
               <h3>Quote Builder</h3>
             </div>
             <form id="uber-booking-form">
-              <div class="row-2">
-                <div>
-                  <div class="field">
-                    <label>Tonnage</label>
-                    <select id="tonnage-select">
-                      <option value="15">15 tons</option>
-                      <option value="25">25 tons</option>
-                      <option value="30" selected>30 tons</option>
-                      <option value="40">40 tons</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>Urgency</label>
-                    <select id="urgency-select">
-                      <option value="standard">Standard</option>
-                      <option value="express">Express</option>
-                      <option value="critical">Critical</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <div class="field">
-                    <label>Booking Notes</label>
-                    <textarea rows="5" placeholder="Special handling instructions, customs requirements, pickup time..."></textarea>
-                  </div>
-                </div>
+              <div class="field">
+                <label for="tonnage-select">Truck capacity or container size</label>
+                <select id="tonnage-select">
+                  <option value="15">15-ton truck</option>
+                  <option value="25">25-ton truck</option>
+                  <option value="30" selected>30-ton truck</option>
+                  <option value="40">40-ton truck</option>
+                  <option value="20ft">20 ft container</option>
+                  <option value="40ft">40 ft container</option>
+                </select>
               </div>
+              <div id="booking-container-quantity-field" class="field" hidden>
+                <label for="booking-container-quantity">Number of containers</label>
+                <input id="booking-container-quantity" type="number" value="1" min="1" max="100" step="1" />
+              </div>
+              <p class="muted">Truck freight uses the origin and destination selected in the calculator above.</p>
+              <p class="quote-vat-disclaimer">Disclaimer: prices are VAT-exclusive. The calculator also shows an estimated total including 16% VAT.</p>
               <button class="btn" type="submit">Generate Quote</button>
-              <div id="booking-quote-box" class="quote-box">
-                <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-                  <div><strong>Total Quote</strong><p id="total-quote">KES 0.00</p></div>
-                  <div><strong>Deposit</strong><p id="deposit-val">KES 0.00</p></div>
-                  <div><strong>Balance</strong><p id="balance-val">KES 0.00</p></div>
-                </div>
-              </div>
+              <div id="booking-quote-box" class="quote-box" role="status" aria-live="polite"></div>
             </form>
           </div>
         </div>
@@ -631,25 +1057,55 @@
                 </div>
                 <span id="fleet-pending-switch-count" class="badge badge-warning">0 pending</span>
               </div>
-              <p class="muted workflow-demo-note">This prototype stores workflow records in this browser. Fleet locations are only rendered for the Admin role.</p>
+              <p class="muted workflow-demo-note">This prototype stores workflow records in this browser. Fleet locations are only rendered for Admin and HR accounts.</p>
               <div id="fleet-switch-requests" class="workflow-records"></div>
             </section>
           </div>
         </div>
 
         <div id="view-finance" class="tab-view">
-          <div class="rounded-box">
+          <section class="rounded-box finance-page">
             <div class="card-header">
               <h3>Finance & Accounts</h3>
             </div>
-            <form id="account-gen-form">
-              <div class="field">
-                <label>Company</label>
-                <input id="acc-company" type="text" placeholder="Company name" />
-              </div>
-              <button class="btn" type="submit">Create Account</button>
-            </form>
-          </div>
+            <p class="muted finance-intro">Review delivery invoices, record partial payments, and track outstanding balances. Marking a delivery paid records the full invoice amount.</p>
+            <div class="finance-summary" aria-live="polite">
+              <article class="finance-summary-card">
+                <span>Paid deliveries</span>
+                <strong id="finance-paid-count">—</strong>
+              </article>
+              <article class="finance-summary-card">
+                <span>Pending deliveries</span>
+                <strong id="finance-pending-count">—</strong>
+              </article>
+              <article class="finance-summary-card">
+                <span>Total received</span>
+                <strong id="finance-total-paid">—</strong>
+              </article>
+              <article class="finance-summary-card">
+                <span>Outstanding balance</span>
+                <strong id="finance-total-balance">—</strong>
+              </article>
+            </div>
+            <p id="finance-status" class="muted" role="status" aria-live="polite">Open Finance to load delivery accounts.</p>
+            <div class="operations-table-wrap">
+              <table class="table-grid finance-table">
+                <thead>
+                  <tr>
+                    <th>Delivery</th>
+                    <th>Company</th>
+                    <th>Destination</th>
+                    <th>Invoice (KES)</th>
+                    <th>Paid (KES)</th>
+                    <th>Balance (KES)</th>
+                    <th>Payment status</th>
+                    <th class="finance-update-column">Update payment</th>
+                  </tr>
+                </thead>
+                <tbody id="finance-delivery-list"></tbody>
+              </table>
+            </div>
+          </section>
         </div>
 
         <div id="view-tracking" class="tab-view">
@@ -696,11 +1152,15 @@
                     <select id="account-role-value" required>
                       <option value="client">Client</option>
                       <option value="driver">Driver</option>
+                      <option value="accountant">Accounts</option>
                       <option value="admin">Admin</option>
+                      <option value="hr">HR</option>
+                      <option value="boss">Boss</option>
+                      <option value="mechanic">Mechanic</option>
                     </select>
                   </div>
                   <div id="driver-name-field" class="field" hidden>
-                    <label for="account-driver-name">Driver display name</label>
+                    <label for="account-driver-name">Employee display name</label>
                     <input id="account-driver-name" type="text" maxlength="120" />
                   </div>
                 </div>
@@ -731,13 +1191,71 @@
     <script src="js/script.js"></script>
     <script src="js/driverPortal.js"></script>
     <script src="js/shipmentLookup.js"></script>
+    <script src="js/employeePortal.js"></script>
+    <script src="js/financePortal.js"></script>
+    <script src="js/clientCommunications.js"></script>
     <script>
       const loginForm = document.getElementById('login-form');
+      const publicHome = document.getElementById('public-home');
       const loginScreen = document.getElementById('login-screen');
+      const signupScreen = document.getElementById('signup-screen');
+      const employeeSignupScreen = document.getElementById('employee-signup-screen');
+      const signupForm = document.getElementById('signup-form');
+      const employeeSignupForm = document.getElementById('employee-signup-form');
       const appShell = document.getElementById('app-shell');
       const loginError = document.getElementById('login-error');
       const loginSubmit = document.getElementById('login-submit');
+      const signupMessage = document.getElementById('signup-message');
+      const signupSubmit = document.getElementById('signup-submit');
+      const employeeSignupMessage = document.getElementById('employee-signup-message');
+      const employeeSignupSubmit = document.getElementById('employee-signup-submit');
       const rememberMeCheckbox = document.getElementById('remember-me');
+      const loginRole = document.getElementById('login-role');
+
+      function showPublicHome() {
+        publicHome.style.display = 'block';
+        loginScreen.style.display = 'none';
+        signupScreen.style.display = 'none';
+        employeeSignupScreen.style.display = 'none';
+        appShell.style.display = 'none';
+      }
+
+      function showLogin() {
+        publicHome.style.display = 'none';
+        loginScreen.style.display = 'flex';
+        signupScreen.style.display = 'none';
+        employeeSignupScreen.style.display = 'none';
+        appShell.style.display = 'none';
+      }
+
+      function showSignup() {
+        publicHome.style.display = 'none';
+        loginScreen.style.display = 'none';
+        signupScreen.style.display = 'flex';
+        employeeSignupScreen.style.display = 'none';
+        appShell.style.display = 'none';
+      }
+
+      function showEmployeeSignup() {
+        publicHome.style.display = 'none';
+        loginScreen.style.display = 'none';
+        signupScreen.style.display = 'none';
+        employeeSignupScreen.style.display = 'flex';
+        appShell.style.display = 'none';
+      }
+
+      document.querySelectorAll('[data-open-login]').forEach((button) => {
+        button.addEventListener('click', showLogin);
+      });
+      document.querySelectorAll('[data-open-home]').forEach((button) => {
+        button.addEventListener('click', showPublicHome);
+      });
+      document.querySelectorAll('[data-open-signup]').forEach((button) => {
+        button.addEventListener('click', showSignup);
+      });
+      document.querySelectorAll('[data-open-employee-signup]').forEach((button) => {
+        button.addEventListener('click', showEmployeeSignup);
+      });
 
       const COOKIE_NAME = 'difan_auth_session';
       const PREF_COOKIE_NAME = 'difan_auth_prefs';
@@ -778,8 +1296,9 @@
           if (prefs.email) {
             document.getElementById('login-email').value = prefs.email;
           }
-          if (typeof prefs.password === 'string') {
-            document.getElementById('login-password').value = prefs.password;
+          if (Object.hasOwn(prefs, 'password')) {
+            delete prefs.password;
+            setCookie(PREF_COOKIE_NAME, JSON.stringify(prefs), 7);
           }
           if (prefs.rememberMe) {
             rememberMeCheckbox.checked = true;
@@ -789,13 +1308,13 @@
         }
       }
 
-      function savePreferences(email, password, rememberMe) {
+      function savePreferences(email, rememberMe) {
         if (!rememberMe) {
           eraseCookie(PREF_COOKIE_NAME);
           return;
         }
 
-        const prefs = { email, password, rememberMe: true };
+        const prefs = { email, rememberMe: true };
         setCookie(PREF_COOKIE_NAME, JSON.stringify(prefs), 7);
       }
 
@@ -803,7 +1322,7 @@
         if (window.DifanApp) {
           window.DifanApp.state.currentUser = {
             id: user.id,
-            name: user.driver_name || user.company_name || user.email,
+            name: user.display_name || user.driver_name || user.company_name || user.email,
             role: user.role || 'client',
             station: 'Athi River HQ',
             company_name: user.company_name || '',
@@ -815,10 +1334,49 @@
           localStorage.setItem('jwt_token', token);
           localStorage.setItem('user_data', JSON.stringify(user));
         }
+        const roleSwitcher = document.getElementById('role-switcher-select');
+        if (roleSwitcher) {
+          roleSwitcher.value = user.role || 'client';
+          roleSwitcher.disabled = true;
+        }
         const userBadge = document.getElementById('current-user-badge');
         if (userBadge) {
-          userBadge.textContent = `${user.driver_name || user.company_name || user.email} (${(user.role || 'client').toUpperCase()})`;
+          userBadge.textContent = `${user.display_name || user.driver_name || user.company_name || user.email} (${(user.role || 'client').toUpperCase()})`;
         }
+        const employeeNavigation = document.getElementById('employees-navigation');
+        if (employeeNavigation) employeeNavigation.hidden = user.role === 'client';
+        const employeeView = document.getElementById('view-employees');
+        if (employeeView) employeeView.hidden = user.role === 'client';
+        const financeAccess = ['admin', 'hr', 'accountant', 'client'].includes(user.role);
+        const financeNavigation = document.getElementById('finance-navigation');
+        if (financeNavigation) financeNavigation.hidden = !financeAccess;
+        const financeView = document.getElementById('view-finance');
+        if (financeView) financeView.hidden = !financeAccess;
+        const communitySection = document.getElementById('dashboard-community-section');
+        const clientCommunity = document.getElementById('client-community-view');
+        const staffCommunity = document.getElementById('staff-community-view');
+        const messagesNavigation = document.getElementById('messages-navigation');
+        const clientMessagesView = document.getElementById('client-messages-view');
+        const staffMessagesView = document.getElementById('staff-messages-view');
+        const reportsNavigation = document.getElementById('reports-navigation');
+        const reportsView = document.getElementById('view-reports');
+        const canCommunicateWithClients = ['admin', 'hr', 'accountant'].includes(user.role);
+        if (communitySection) communitySection.hidden = !financeAccess;
+        if (clientCommunity) clientCommunity.hidden = user.role !== 'client';
+        if (staffCommunity) staffCommunity.hidden = !canCommunicateWithClients;
+        if (messagesNavigation) messagesNavigation.hidden = !(['client', 'admin', 'hr', 'accountant'].includes(user.role));
+        if (clientMessagesView) clientMessagesView.hidden = user.role !== 'client';
+        if (staffMessagesView) staffMessagesView.hidden = !canCommunicateWithClients;
+        if (reportsNavigation) reportsNavigation.hidden = user.role !== 'boss';
+        if (reportsView) reportsView.hidden = user.role !== 'boss';
+        const employeeName = document.getElementById('employee-section-name');
+        if (employeeName) employeeName.textContent = user.display_name || user.driver_name || user.email || '';
+        const employeeRole = document.getElementById('employee-section-role');
+        if (employeeRole) employeeRole.textContent = user.role || '';
+        const employeeEmail = document.getElementById('employee-section-email');
+        if (employeeEmail) employeeEmail.textContent = user.email || '';
+        const employeeStatus = document.getElementById('employee-section-status');
+        if (employeeStatus) employeeStatus.textContent = user.account_status || 'active';
         window.dispatchEvent(new Event('difan:session-ready'));
       }
 
@@ -829,6 +1387,15 @@
           });
           const data = await response.json();
           if (!response.ok || !data.user) {
+            if (response.status === 401 || response.status === 403 || response.status === 422) {
+              eraseCookie(COOKIE_NAME);
+              localStorage.removeItem('jwt_token');
+              localStorage.removeItem('user_data');
+              appShell.style.display = 'none';
+              showPublicHome();
+              loginError.textContent = 'Your session expired. Please sign in again.';
+              return;
+            }
             throw new Error(data.message || 'Unable to refresh the signed-in account.');
           }
           session.user = data.user;
@@ -857,10 +1424,13 @@
           const userBadge = document.getElementById('current-user-badge');
           if (userBadge) {
             const role = session.user.role || 'client';
-            userBadge.textContent = `${session.user.company_name || session.user.email} (${role === 'client' ? 'CLIENT PORTAL' : role.toUpperCase()})`;
+            userBadge.textContent = `${session.user.display_name || session.user.driver_name || session.user.company_name || session.user.email} (${role === 'client' ? 'CLIENT PORTAL' : role.toUpperCase()})`;
           }
 
           loginScreen.style.display = 'none';
+          signupScreen.style.display = 'none';
+          employeeSignupScreen.style.display = 'none';
+          publicHome.style.display = 'none';
           appShell.style.display = 'block';
           refreshSessionUser(session);
           return true;
@@ -878,12 +1448,13 @@
         const email = document.getElementById('login-email').value.trim();
         const password = document.getElementById('login-password').value;
         const rememberMe = rememberMeCheckbox.checked;
+        const role = loginRole.value;
 
         try {
           const response = await fetch('http://localhost:5000/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ email, password, role })
           });
 
           const data = await response.json();
@@ -897,17 +1468,18 @@
           setCookie(COOKIE_NAME, JSON.stringify({ token, user }), 0);
           localStorage.setItem('jwt_token', token);
           localStorage.setItem('user_data', JSON.stringify(user));
-          savePreferences(email, password, rememberMe);
+          savePreferences(email, rememberMe);
 
           applyAuthenticatedUser(user, token);
 
           const userBadge = document.getElementById('current-user-badge');
           if (userBadge) {
             const role = user.role || 'client';
-            userBadge.textContent = `${user.company_name || user.email} (${role === 'client' ? 'CLIENT PORTAL' : role.toUpperCase()})`;
+            userBadge.textContent = `${user.display_name || user.driver_name || user.company_name || user.email} (${role === 'client' ? 'CLIENT PORTAL' : role.toUpperCase()})`;
           }
 
           loginScreen.style.display = 'none';
+          publicHome.style.display = 'none';
           appShell.style.display = 'block';
         } catch (error) {
           loginError.textContent = error.message || 'Unable to sign in right now.';
@@ -916,12 +1488,93 @@
         }
       }
 
+      async function onSignupSubmit(event) {
+        event.preventDefault();
+        signupMessage.textContent = '';
+        signupMessage.style.color = '';
+        signupSubmit.disabled = true;
+        const companyName = document.getElementById('signup-company').value.trim();
+        const email = document.getElementById('signup-email').value.trim();
+        const password = document.getElementById('signup-password').value;
+        const confirmPassword = document.getElementById('signup-password-confirm').value;
+        if (password !== confirmPassword) {
+          signupMessage.textContent = 'The passwords do not match.';
+          signupSubmit.disabled = false;
+          return;
+        }
+        try {
+          const response = await fetch('http://localhost:5000/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ company_name: companyName, email, password })
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.message || 'Account registration failed.');
+          }
+          document.getElementById('login-email').value = email;
+          loginRole.value = 'client';
+          loginError.textContent = data.message || 'Account created. Sign in to continue.';
+          loginError.style.color = '#2a5a3b';
+          showLogin();
+        } catch (error) {
+          signupMessage.textContent = error.message || 'Unable to create the account.';
+        } finally {
+          signupSubmit.disabled = false;
+        }
+      }
+
+      async function onEmployeeSignupSubmit(event) {
+        event.preventDefault();
+        employeeSignupMessage.textContent = '';
+        employeeSignupMessage.style.color = '';
+        employeeSignupSubmit.disabled = true;
+        const displayName = document.getElementById('employee-signup-name').value.trim();
+        const role = document.getElementById('employee-signup-role').value;
+        const email = document.getElementById('employee-signup-email').value.trim();
+        const password = document.getElementById('employee-signup-password').value;
+        const confirmPassword = document.getElementById('employee-signup-password-confirm').value;
+        if (password !== confirmPassword) {
+          employeeSignupMessage.textContent = 'The passwords do not match.';
+          employeeSignupSubmit.disabled = false;
+          return;
+        }
+        try {
+          const response = await fetch('http://localhost:5000/api/auth/register/employee', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ display_name: displayName, role, email, password })
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message || 'Employee registration failed.');
+          employeeSignupMessage.textContent = data.message;
+          employeeSignupMessage.style.color = '#2a5a3b';
+          employeeSignupForm.reset();
+        } catch (error) {
+          employeeSignupMessage.textContent = error.message || 'Unable to submit your registration.';
+        } finally {
+          employeeSignupSubmit.disabled = false;
+        }
+      }
+
       loginForm.addEventListener('submit', onLoginSubmit);
+      signupForm.addEventListener('submit', onSignupSubmit);
+      employeeSignupForm.addEventListener('submit', onEmployeeSignupSubmit);
+      document.getElementById('logout-button').addEventListener('click', () => {
+        eraseCookie(COOKIE_NAME);
+        localStorage.removeItem('jwt_token');
+        localStorage.removeItem('user_data');
+        loginForm.reset();
+        loginError.textContent = '';
+        if (window.DifanApp) {
+          window.DifanApp.state.currentUser = { name: '', role: '', company_name: '', email: '' };
+        }
+        showPublicHome();
+      });
       loadSavedPreferences();
       const alreadyLoggedIn = restoreSession();
       if (!alreadyLoggedIn) {
-        loginScreen.style.display = 'flex';
-        appShell.style.display = 'none';
+        showPublicHome();
       }
     </script>
   </body>
