@@ -1,13 +1,14 @@
-import calendar
 import io
 import math
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from PIL import Image, UnidentifiedImageError
+import pymupdf as fitz
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.models.payroll import db
@@ -20,7 +21,7 @@ EMPLOYEE_ROLES = ADMIN_ROLES | {'hr', 'driver', 'mechanic', 'accountant'}
 FINANCE_VIEW_ROLES = ADMIN_ROLES | {'accountant', 'client'}
 FINANCE_UPDATE_ROLES = ADMIN_ROLES | {'accountant'}
 CLIENT_COMMUNICATION_ROLES = ADMIN_ROLES | HR_ROLES | {'accountant'}
-MESSAGE_CONTACT_ROLES = {'admin', 'hr', 'accountant'}
+MESSAGE_CONTACT_ROLES = {'admin', 'hr', 'boss', 'accountant'}
 RATE_MANAGER_ROLES = ADMIN_ROLES | {'hr'}
 REPORT_MAX_MEDIA_BYTES = 15 * 1024 * 1024
 REPORT_MAX_MEDIA_FILES = 5
@@ -150,6 +151,44 @@ class ClientNotice(db.Model):
         }
 
 
+class TransportEnquiry(db.Model):
+    __tablename__ = 'transport_enquiries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    contact_name = db.Column(db.String(120), nullable=False)
+    company_name = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(254), nullable=False)
+    phone = db.Column(db.String(40), nullable=False)
+    origin = db.Column(db.String(200), nullable=False)
+    destination = db.Column(db.String(200), nullable=False)
+    cargo_description = db.Column(db.String(500), nullable=False)
+    tonnage = db.Column(db.Float, nullable=True)
+    pickup_date = db.Column(db.String(10), nullable=True)
+    notes = db.Column(db.String(2000), nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='OPEN')
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    handled_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=True)
+    handled_by = db.relationship('UserAccount', foreign_keys=[handled_by_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'contact_name': self.contact_name,
+            'company_name': self.company_name,
+            'email': self.email,
+            'phone': self.phone,
+            'origin': self.origin,
+            'destination': self.destination,
+            'cargo_description': self.cargo_description,
+            'tonnage': self.tonnage,
+            'pickup_date': self.pickup_date,
+            'notes': self.notes,
+            'status': self.status,
+            'created_at': self.created_at.isoformat(),
+            'handled_by': self.handled_by.display_name if self.handled_by else None,
+        }
+
+
 class ClientConversation(db.Model):
     __tablename__ = 'client_conversations'
     __table_args__ = (
@@ -202,6 +241,8 @@ class ShipmentFinance(db.Model):
 
     def to_dict(self):
         invoice_amount = self.invoice_amount_kes
+        if invoice_amount is None and self.shipment:
+            invoice_amount = self.shipment.quoted_amount_kes
         paid_amount = round(self.paid_amount_kes, 2)
         balance = round(max((invoice_amount or 0) - paid_amount, 0), 2)
         if invoice_amount is None:
@@ -277,6 +318,15 @@ class PayrollSlip(db.Model):
     allowances = db.Column(db.Float, nullable=False, default=0)
     bonus = db.Column(db.Float, nullable=False, default=0)
     deductions = db.Column(db.Float, nullable=False, default=0)
+    salary_advance = db.Column(db.Float, nullable=False, default=0)
+    nssf_deduction = db.Column(db.Float, nullable=True)
+    shif_deduction = db.Column(db.Float, nullable=True)
+    housing_levy_deduction = db.Column(db.Float, nullable=True)
+    taxable_pay = db.Column(db.Float, nullable=True)
+    tax_charged = db.Column(db.Float, nullable=True)
+    personal_relief = db.Column(db.Float, nullable=True)
+    other_reliefs = db.Column(db.Float, nullable=True)
+    paye_tax = db.Column(db.Float, nullable=True)
     gross_pay = db.Column(db.Float, nullable=False)
     net_pay = db.Column(db.Float, nullable=False)
     status = db.Column(db.String(24), nullable=False, default='PENDING_APPROVAL')
@@ -285,6 +335,14 @@ class PayrollSlip(db.Model):
     approved_at = db.Column(db.DateTime(timezone=True), nullable=True)
     receipt_signed_at = db.Column(db.DateTime(timezone=True), nullable=True)
     paystub_signed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    advance_signed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    signed_pdf_object_key = db.Column(db.String(512), nullable=True)
+    signed_pdf_version_id = db.Column(db.String(256), nullable=True)
+    signed_pdf_sha256 = db.Column(db.String(64), nullable=True)
+    signature_device_id = db.Column(db.String(120), nullable=True)
+    signature_ip_address = db.Column(db.String(64), nullable=True)
+    signature_latitude = db.Column(db.Float, nullable=True)
+    signature_longitude = db.Column(db.Float, nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     employee = db.relationship('UserAccount', foreign_keys=[employee_id])
 
@@ -300,12 +358,24 @@ class PayrollSlip(db.Model):
             'allowances': self.allowances,
             'bonus': self.bonus,
             'deductions': self.deductions,
+            'salary_advance': self.salary_advance,
+            'salary_advance_label': 'Salary Advance / Early Cashout',
+            'nssf_deduction': self.nssf_deduction,
+            'shif_deduction': self.shif_deduction,
+            'housing_levy_deduction': self.housing_levy_deduction,
+            'taxable_pay': self.taxable_pay,
+            'tax_charged': self.tax_charged,
+            'personal_relief': self.personal_relief,
+            'other_reliefs': self.other_reliefs,
+            'paye_tax': self.paye_tax,
             'gross_pay': self.gross_pay,
             'net_pay': self.net_pay,
             'status': self.status,
             'approved_at': self.approved_at.isoformat() if self.approved_at else None,
             'receipt_signed_at': self.receipt_signed_at.isoformat() if self.receipt_signed_at else None,
             'paystub_signed_at': self.paystub_signed_at.isoformat() if self.paystub_signed_at else None,
+            'advance_signed_at': self.advance_signed_at.isoformat() if self.advance_signed_at else None,
+            'signed_pdf_sha256': self.signed_pdf_sha256,
         }
 
 
@@ -350,22 +420,104 @@ def current_user():
         return None
 
 
+@portal_bp.post('/transport-enquiries')
+def create_transport_enquiry():
+    data = request_data()
+    string_fields = {
+        'contact_name': (120, 'Your name'),
+        'company_name': (120, 'Company'),
+        'email': (254, 'Email'),
+        'phone': (40, 'Phone'),
+        'origin': (200, 'Pickup location'),
+        'destination': (200, 'Destination'),
+        'cargo_description': (500, 'Cargo description'),
+    }
+    values = {}
+    for field, (max_length, label) in string_fields.items():
+        value = data.get(field)
+        if not isinstance(value, str) or not value.strip() or len(value.strip()) > max_length:
+            return jsonify({'status': 'error', 'message': f'{label} is required and must be at most {max_length} characters.'}), 400
+        values[field] = value.strip()
+    if '@' not in values['email'] or values['email'].startswith('@') or values['email'].endswith('@'):
+        return jsonify({'status': 'error', 'message': 'Enter a valid email address.'}), 400
+    if not re.fullmatch(r'[+0-9() .-]{7,40}', values['phone']):
+        return jsonify({'status': 'error', 'message': 'Enter a valid phone number.'}), 400
+
+    try:
+        tonnage = parse_amount(data.get('tonnage')) if data.get('tonnage') not in (None, '') else None
+    except (TypeError, ValueError):
+        return jsonify({'status': 'error', 'message': 'Cargo weight must be a valid number of tonnes.'}), 400
+    if tonnage is not None and not 0 < tonnage <= 100:
+        return jsonify({'status': 'error', 'message': 'Cargo weight must be greater than zero and no more than 100 tonnes.'}), 400
+
+    pickup_date = data.get('pickup_date', '')
+    if pickup_date:
+        if not isinstance(pickup_date, str):
+            return jsonify({'status': 'error', 'message': 'Choose a valid requested pickup date.'}), 400
+        try:
+            datetime.strptime(pickup_date, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'status': 'error', 'message': 'Choose a valid requested pickup date.'}), 400
+    notes = data.get('notes', '')
+    if not isinstance(notes, str) or len(notes.strip()) > 2000:
+        return jsonify({'status': 'error', 'message': 'Additional details must be at most 2,000 characters.'}), 400
+
+    enquiry = TransportEnquiry(
+        **values,
+        tonnage=tonnage,
+        pickup_date=pickup_date or None,
+        notes=notes.strip() or None,
+    )
+    db.session.add(enquiry)
+    db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'message': 'Your transport enquiry was sent to the Difan team.',
+        'reference': f'TE-{enquiry.id:06d}',
+    }), 201
+
+
+@portal_bp.get('/transport-enquiries')
+@jwt_required()
+def list_transport_enquiries():
+    user = current_user()
+    if not user or user.account_status != 'active' or user.role not in ADMIN_ROLES:
+        return jsonify({'status': 'error', 'message': 'HR or management access is required to view transport enquiries.'}), 403
+    enquiries = TransportEnquiry.query.order_by(
+        TransportEnquiry.created_at.desc(),
+        TransportEnquiry.id.desc(),
+    ).limit(200).all()
+    return jsonify({'status': 'success', 'enquiries': [item.to_dict() for item in enquiries]}), 200
+
+
+@portal_bp.patch('/transport-enquiries/<int:enquiry_id>')
+@jwt_required()
+def update_transport_enquiry(enquiry_id):
+    user = current_user()
+    if not user or user.account_status != 'active' or user.role not in ADMIN_ROLES:
+        return jsonify({'status': 'error', 'message': 'HR or management access is required to update transport enquiries.'}), 403
+    enquiry = db.session.get(TransportEnquiry, enquiry_id)
+    if not enquiry:
+        return jsonify({'status': 'error', 'message': 'Transport enquiry was not found.'}), 404
+    data = request_data()
+    status = data.get('status')
+    if status not in {'OPEN', 'CONTACTED', 'CLOSED'}:
+        return jsonify({'status': 'error', 'message': 'Choose Open, Contacted, or Closed.'}), 400
+    enquiry.status = status
+    enquiry.handled_by_id = user.id
+    db.session.commit()
+    return jsonify({'status': 'success', 'enquiry': enquiry.to_dict()}), 200
+
+
 def employee_payroll_status(user):
-    if not user or user.role not in EMPLOYEE_ROLES:
-        return {'must_sign': False, 'pending': []}
-    now = datetime.now(timezone.utc)
-    is_month_end = now.day == calendar.monthrange(now.year, now.month)[1]
-    if not is_month_end:
-        return {'must_sign': False, 'pending': []}
-    pending = PayrollSlip.query.filter(
-        PayrollSlip.employee_id == user.id,
-        PayrollSlip.status == 'APPROVED',
-        db.or_(
-            PayrollSlip.receipt_signed_at.is_(None),
-            PayrollSlip.paystub_signed_at.is_(None),
-        ),
-    ).order_by(PayrollSlip.pay_period).all()
-    return {'must_sign': bool(pending), 'pending': pending}
+    from backend.routes.workforce import employee_acknowledgement_status
+
+    pending = employee_acknowledgement_status(user)
+    return {
+        'must_sign': pending['must_acknowledge'],
+        'pending': pending['pending_slips'],
+        'pending_notices': pending['pending_notices'],
+    }
 
 
 def conversation_for_user(conversation_id, user):
@@ -556,7 +708,18 @@ def list_client_conversations():
         ]
     else:
         query = query.filter_by(staff_user_id=user.id)
-        contact_rows = []
+        contacts = UserAccount.query.filter_by(
+            role='client',
+            account_status='active',
+        ).order_by(UserAccount.company_name, UserAccount.display_name, UserAccount.email).all()
+        contact_rows = [
+            {
+                'id': contact.id,
+                'display_name': contact.company_name or contact.display_name or contact.email,
+                'role': contact.role,
+            }
+            for contact in contacts
+        ]
 
     conversations = query.order_by(ClientConversation.updated_at.desc(), ClientConversation.id.desc()).all()
     conversation_rows = []
@@ -584,36 +747,47 @@ def list_client_conversations():
 @jwt_required()
 def start_client_conversation():
     user = current_user()
-    if not user or user.account_status != 'active' or user.role != 'client':
-        return jsonify({'status': 'error', 'message': 'Only client accounts can start a staff conversation.'}), 403
-
     data = request_data()
     try:
-        staff_user_id = parse_integer(data.get('staff_user_id'))
+        if user and user.role == 'client':
+            client = user
+            staff_user_id = parse_integer(data.get('staff_user_id'))
+            staff = db.session.get(UserAccount, staff_user_id)
+        elif user and user.role in CLIENT_COMMUNICATION_ROLES:
+            client_user_id = parse_integer(data.get('client_user_id'))
+            client = db.session.get(UserAccount, client_user_id)
+            staff = user
+        else:
+            return jsonify({'status': 'error', 'message': 'This account cannot start a private conversation.'}), 403
     except (TypeError, ValueError):
-        return jsonify({'status': 'error', 'message': 'Choose an Admin, HR, or Accounts contact.'}), 400
-    staff = db.session.get(UserAccount, staff_user_id)
-    if not staff or staff.account_status != 'active' or staff.role not in MESSAGE_CONTACT_ROLES:
-        return jsonify({'status': 'error', 'message': 'Messages may only be sent to active Admin, HR, or Accounts contacts.'}), 400
+        return jsonify({'status': 'error', 'message': 'Choose a recipient for this conversation.'}), 400
+    if not user or user.account_status != 'active':
+        return jsonify({'status': 'error', 'message': 'This account is not active.'}), 403
+    if user.role == 'client':
+        if not staff or staff.account_status != 'active' or staff.role not in MESSAGE_CONTACT_ROLES:
+            return jsonify({'status': 'error', 'message': 'Choose an active Admin, HR, Boss, or Accounts contact.'}), 400
+    elif not client or client.account_status != 'active' or client.role != 'client':
+        return jsonify({'status': 'error', 'message': 'Choose an active client account.'}), 400
 
     conversation = ClientConversation.query.filter_by(
-        client_user_id=user.id,
+        client_user_id=client.id,
         staff_user_id=staff.id,
     ).first()
     if conversation is None:
         conversation = ClientConversation()
-        conversation.client_user_id = user.id
+        conversation.client_user_id = client.id
         conversation.staff_user_id = staff.id
         conversation.updated_at = datetime.now(timezone.utc)
         db.session.add(conversation)
         db.session.commit()
 
+    peer = staff if user.role == 'client' else client
     return jsonify({
         'status': 'success',
         'conversation': {
             'id': conversation.id,
-            'peer_name': staff.display_name or staff.email,
-            'peer_role': staff.role,
+            'peer_name': peer.company_name if peer.role == 'client' else peer.display_name or peer.email,
+            'peer_role': peer.role,
         },
     }), 201
 
@@ -745,6 +919,74 @@ def update_delivery_finance(tracking_number):
     return jsonify({'status': 'success', 'delivery': finance.to_dict()}), 200
 
 
+@portal_bp.post('/delivery-finance/bulk-mark-paid')
+@jwt_required()
+def bulk_mark_deliveries_paid():
+    user = current_user()
+    if not user or user.role not in FINANCE_UPDATE_ROLES:
+        return jsonify({'status': 'error', 'message': 'Accountant access is required to update delivery payments.'}), 403
+
+    data = request_data()
+    tracking_numbers = data.get('tracking_numbers')
+    if (
+        not isinstance(tracking_numbers, list)
+        or not tracking_numbers
+        or len(tracking_numbers) > 100
+        or any(not isinstance(value, str) or not value.strip() for value in tracking_numbers)
+    ):
+        return jsonify({'status': 'error', 'message': 'Select between 1 and 100 deliveries to mark paid.'}), 400
+    normalized_numbers = [value.strip().upper() for value in tracking_numbers]
+    if len(set(normalized_numbers)) != len(normalized_numbers):
+        return jsonify({'status': 'error', 'message': 'The selected delivery list contains duplicates.'}), 400
+
+    shipments = Shipment.query.filter(Shipment.tracking_number.in_(normalized_numbers)).all()
+    shipments_by_number = {shipment.tracking_number: shipment for shipment in shipments}
+    if len(shipments_by_number) != len(normalized_numbers):
+        return jsonify({'status': 'error', 'message': 'One or more selected deliveries were not found.'}), 404
+
+    finance_rows = {
+        record.tracking_number: record
+        for record in ShipmentFinance.query.filter(
+            ShipmentFinance.tracking_number.in_(normalized_numbers),
+        ).all()
+    }
+    missing_invoices = []
+    for number in normalized_numbers:
+        finance = finance_rows.get(number)
+        invoice_amount = (
+            finance.invoice_amount_kes if finance
+            else shipments_by_number[number].quoted_amount_kes
+        )
+        if invoice_amount is None:
+            missing_invoices.append(number)
+    if missing_invoices:
+        return jsonify({
+            'status': 'error',
+            'message': f'Add an invoice amount before bulk-marking paid: {", ".join(missing_invoices)}.',
+        }), 409
+
+    now = datetime.now(timezone.utc)
+    for number in normalized_numbers:
+        finance = finance_rows.get(number)
+        if finance is None:
+            finance = ShipmentFinance(
+                tracking_number=number,
+                invoice_amount_kes=shipments_by_number[number].quoted_amount_kes,
+                paid_amount_kes=0,
+            )
+            db.session.add(finance)
+        finance.paid_amount_kes = finance.invoice_amount_kes
+        finance.updated_by_id = user.id
+        finance.updated_at = now
+
+    db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'message': f'{len(normalized_numbers)} delivery payment(s) marked fully paid.',
+        'updated_count': len(normalized_numbers),
+    }), 200
+
+
 @portal_bp.get('/container-rates')
 @jwt_required()
 def get_container_rates():
@@ -865,17 +1107,210 @@ def list_payroll():
     user = current_user()
     if not user or user.role not in EMPLOYEE_ROLES:
         return jsonify({'status': 'error', 'message': 'Employee payroll access is required.'}), 403
+    status = employee_payroll_status(user)
     query = PayrollSlip.query
-    if user.role not in ADMIN_ROLES:
+    if user.role not in ADMIN_ROLES or status['must_sign']:
         query = query.filter_by(employee_id=user.id)
     slips = query.order_by(PayrollSlip.pay_period.desc(), PayrollSlip.id.desc()).all()
-    status = employee_payroll_status(user)
+    requested_year = request.args.get('year')
+    if requested_year is not None:
+        try:
+            year = int(requested_year)
+            if not 2000 <= year <= datetime.now(timezone.utc).year:
+                raise ValueError
+        except ValueError:
+            return jsonify({'status': 'error', 'message': 'Choose a valid payroll year up to the current year.'}), 400
+        today = datetime.now(timezone.utc)
+        slips = [
+            slip for slip in slips
+            if (
+                (period := parse_payroll_month(slip.pay_period, year=year)) is not None
+                and (period.year < today.year or period.month <= today.month)
+            )
+        ]
     return jsonify({
         'status': 'success',
         'slips': [slip.to_dict() for slip in slips],
         'must_sign': status['must_sign'],
         'pending_slips': [slip.to_dict() for slip in status['pending']],
+        'pending_notices': [notice.to_dict() for notice in status['pending_notices']],
     }), 200
+
+
+def parse_payroll_month(pay_period, year=None):
+    if not isinstance(pay_period, str):
+        return None
+    for date_format in ('%Y-%m', '%Y/%m', '%B %Y', '%b %Y'):
+        try:
+            parsed = datetime.strptime(pay_period.strip(), date_format)
+            return parsed if year is None or parsed.year == year else None
+        except ValueError:
+            continue
+    return None
+
+
+def format_payroll_amount(value):
+    return f'KES {value:,.2f}' if value is not None else 'Not entered'
+
+
+def payroll_pdf_response(contents, filename):
+    response = send_file(
+        io.BytesIO(contents),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename,
+        max_age=0,
+    )
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+
+def _create_p9_pdf(employee, year):
+    current = datetime.now(timezone.utc)
+    if year > current.year:
+        return None, 'A P9 cannot be generated for a future year.', 400
+    final_month = current.month if year == current.year else 12
+    slips = PayrollSlip.query.filter_by(employee_id=employee.id, status='APPROVED').all()
+    by_month = {}
+    for slip in slips:
+        parsed = parse_payroll_month(slip.pay_period, year)
+        if parsed:
+            by_month.setdefault(parsed.month, []).append(slip)
+
+    missing_months = [month for month in range(1, final_month + 1) if not by_month.get(month)]
+    if missing_months:
+        month_names = ', '.join(datetime(year, month, 1).strftime('%B') for month in missing_months)
+        return None, f'Approved payroll records are missing for: {month_names}. No zero values were assumed.', 409
+    duplicate_months = [month for month in range(1, final_month + 1) if len(by_month[month]) > 1]
+    if duplicate_months:
+        return None, 'More than one approved pay period maps to a month. Correct the payroll periods before generating P9.', 409
+
+    required_fields = (
+        'nssf_deduction', 'shif_deduction', 'housing_levy_deduction',
+        'taxable_pay', 'tax_charged', 'personal_relief', 'other_reliefs', 'paye_tax',
+    )
+    for month in range(1, final_month + 1):
+        slip = by_month[month][0]
+        missing_fields = [field.replace('_', ' ') for field in required_fields if getattr(slip, field) is None]
+        if missing_fields:
+            month_name = datetime(year, month, 1).strftime('%B')
+            return None, f'{month_name} payroll is missing explicitly entered statutory values: {", ".join(missing_fields)}.', 409
+
+    employee_name = employee.display_name or employee.driver_name or employee.email
+    employer_name = current_app.config.get('PAYROLL_EMPLOYER_NAME', 'Difan Logistics')
+    employer_pin = current_app.config.get('PAYROLL_EMPLOYER_KRA_PIN') or 'Not configured'
+    employee_pin = current_app.config.get(f'PAYROLL_EMPLOYEE_{employee.id}_KRA_PIN') or 'Not provided'
+    monthly_fields = (
+        ('Gross pay', 'gross_pay'),
+        ('NSSF', 'nssf_deduction'),
+        ('SHIF', 'shif_deduction'),
+        ('Housing levy', 'housing_levy_deduction'),
+        ('Taxable pay', 'taxable_pay'),
+        ('Tax charged', 'tax_charged'),
+        ('Personal relief', 'personal_relief'),
+        ('Other reliefs', 'other_reliefs'),
+        ('PAYE', 'paye_tax'),
+    )
+    annual_totals = {field: 0.0 for _, field in monthly_fields}
+    lines = [
+        'DIFAN LOGISTICS - P9 ANNUAL TAX SUMMARY',
+        f'Tax year: {year}',
+        f'Employer: {employer_name}',
+        f'Employer KRA PIN: {employer_pin}',
+        f'Employee: {employee_name}',
+        f'Employee KRA PIN: {employee_pin}',
+        '',
+        'Month | ' + ' | '.join(label for label, _ in monthly_fields),
+    ]
+    for month in range(1, final_month + 1):
+        slip = by_month[month][0]
+        values = []
+        for label, field in monthly_fields:
+            value = getattr(slip, field)
+            annual_totals[field] += value
+            values.append(f'{value:,.2f}')
+        lines.append(datetime(year, month, 1).strftime('%b') + ' | ' + ' | '.join(values))
+    lines.append('TOTAL | ' + ' | '.join(f'{annual_totals[field]:,.2f}' for _, field in monthly_fields))
+    lines.extend([
+        '',
+        'Salary Advance / Early Cashout is disclosed separately on each paystub and is not treated as a statutory deduction in this summary.',
+        'All statutory and tax values above are transcribed from explicitly entered, approved payroll records; no tax values were estimated.',
+    ])
+
+    document = fitz.open()
+    page = document.new_page(width=842, height=595)
+    page.insert_text((36, 34), lines[0], fontsize=16, fontname='helv')
+    content = '\n'.join(lines[1:]).encode('latin-1', 'replace').decode('latin-1')
+    page.insert_textbox(fitz.Rect(36, 52, 806, 560), content, fontsize=8, fontname='cour', lineheight=1.3)
+    return document.tobytes(garbage=4, deflate=True), None, 200
+
+
+@portal_bp.get('/payroll/<int:slip_id>/pdf')
+@jwt_required()
+def download_payroll_slip_pdf(slip_id):
+    user = current_user()
+    slip = db.session.get(PayrollSlip, slip_id)
+    if not user or not slip or (
+        slip.employee_id != user.id and user.role not in ADMIN_ROLES
+    ):
+        return jsonify({'status': 'error', 'message': 'Payslip was not found for this account.'}), 404
+    lines = [
+        'DIFAN LOGISTICS - PAYSLIP',
+        f'Employee: {slip.employee.display_name or slip.employee.driver_name or slip.employee.email}',
+        f'Pay period: {slip.pay_period}',
+        f'Basic pay: {format_payroll_amount(slip.basic_pay)}',
+        f'Allowances: {format_payroll_amount(slip.allowances)}',
+        f'Bonus: {format_payroll_amount(slip.bonus)}',
+        f'Gross pay: {format_payroll_amount(slip.gross_pay)}',
+        f'Standard payroll deductions: {format_payroll_amount(slip.deductions)}',
+        f'NSSF: {format_payroll_amount(slip.nssf_deduction)}',
+        f'SHIF: {format_payroll_amount(slip.shif_deduction)}',
+        f'Housing levy: {format_payroll_amount(slip.housing_levy_deduction)}',
+        f'Taxable pay: {format_payroll_amount(slip.taxable_pay)}',
+        f'Tax charged: {format_payroll_amount(slip.tax_charged)}',
+        f'Personal relief: {format_payroll_amount(slip.personal_relief)}',
+        f'Other reliefs: {format_payroll_amount(slip.other_reliefs)}',
+        f'PAYE: {format_payroll_amount(slip.paye_tax)}',
+        f'Salary Advance / Early Cashout: {format_payroll_amount(slip.salary_advance)}',
+        f'Net pay: {format_payroll_amount(slip.net_pay)}',
+        f'Status: {slip.status}',
+    ]
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((48, 58), lines[0], fontsize=16, fontname='helv')
+    content = '\n'.join(lines[1:]).encode('latin-1', 'replace').decode('latin-1')
+    page.insert_textbox(fitz.Rect(48, 86, 547, 780), content, fontsize=11, fontname='helv', lineheight=1.5)
+    safe_period = re.sub(r'[^A-Za-z0-9_-]+', '-', slip.pay_period).strip('-') or 'pay-period'
+    return payroll_pdf_response(document.tobytes(garbage=4, deflate=True), f'{safe_period}-payslip.pdf')
+
+
+@portal_bp.get('/payroll/p9/<int:year>')
+@jwt_required()
+def download_own_p9(year):
+    user = current_user()
+    if not user or user.role not in EMPLOYEE_ROLES:
+        return jsonify({'status': 'error', 'message': 'Employee payroll access is required.'}), 403
+    pdf, error, status_code = _create_p9_pdf(user, year)
+    if error:
+        return jsonify({'status': 'error', 'message': error}), status_code
+    return payroll_pdf_response(pdf, f'{year}-P9-annual-summary.pdf')
+
+
+@portal_bp.get('/payroll/employees/<int:employee_id>/p9/<int:year>')
+@jwt_required()
+def download_employee_p9(employee_id, year):
+    user = current_user()
+    if not user or user.role not in ADMIN_ROLES:
+        return jsonify({'status': 'error', 'message': 'HR or management access is required.'}), 403
+    employee = db.session.get(UserAccount, employee_id)
+    if not employee or employee.role not in EMPLOYEE_ROLES:
+        return jsonify({'status': 'error', 'message': 'Employee was not found.'}), 404
+    pdf, error, status_code = _create_p9_pdf(employee, year)
+    if error:
+        return jsonify({'status': 'error', 'message': error}), status_code
+    safe_name = re.sub(r'[^A-Za-z0-9_-]+', '-', employee.display_name or employee.driver_name or 'employee')
+    return payroll_pdf_response(pdf, f'{safe_name}-{year}-P9.pdf')
 
 
 @portal_bp.post('/payroll')
@@ -891,6 +1326,15 @@ def create_payroll_slip():
         allowances = parse_amount(data.get('allowances', 0))
         bonus = parse_amount(data.get('bonus', 0))
         deductions = parse_amount(data.get('deductions', 0))
+        salary_advance = parse_amount(data.get('salary_advance', 0))
+        statutory_fields = (
+            'nssf_deduction', 'shif_deduction', 'housing_levy_deduction',
+            'taxable_pay', 'tax_charged', 'personal_relief', 'other_reliefs', 'paye_tax',
+        )
+        statutory_amounts = {
+            field: parse_amount(data[field]) if data.get(field) not in (None, '') else None
+            for field in statutory_fields
+        }
     except (TypeError, ValueError):
         return jsonify({'status': 'error', 'message': 'Enter valid employee and payroll amounts.'}), 400
     period = data.get('pay_period', '')
@@ -902,13 +1346,16 @@ def create_payroll_slip():
         return jsonify({'status': 'error', 'message': 'Choose an existing employee account.'}), 400
     if not period or len(period) > 20:
         return jsonify({'status': 'error', 'message': 'Enter a payroll period of 20 characters or fewer.'}), 400
-    if min(basic_pay, allowances, bonus, deductions) < 0 or max(basic_pay, allowances, bonus, deductions) > 100_000_000:
+    all_amounts = [basic_pay, allowances, bonus, deductions, salary_advance, *(
+        amount for amount in statutory_amounts.values() if amount is not None
+    )]
+    if min(all_amounts) < 0 or max(all_amounts) > 100_000_000:
         return jsonify({'status': 'error', 'message': 'Payroll amounts must be non-negative and within the supported limit.'}), 400
     if PayrollSlip.query.filter_by(employee_id=employee.id, pay_period=period).first():
         return jsonify({'status': 'error', 'message': 'A payslip already exists for this employee and period.'}), 409
 
     gross_pay = round(basic_pay + allowances + bonus, 2)
-    if deductions > gross_pay:
+    if deductions + salary_advance > gross_pay:
         return jsonify({'status': 'error', 'message': 'Deductions cannot exceed gross pay.'}), 400
     slip = PayrollSlip()
     slip.employee_id = employee.id
@@ -917,8 +1364,11 @@ def create_payroll_slip():
     slip.allowances = allowances
     slip.bonus = bonus
     slip.deductions = deductions
+    slip.salary_advance = salary_advance
+    for field, amount in statutory_amounts.items():
+        setattr(slip, field, amount)
     slip.gross_pay = gross_pay
-    slip.net_pay = round(gross_pay - deductions, 2)
+    slip.net_pay = round(gross_pay - deductions - salary_advance, 2)
     slip.status = 'PENDING_APPROVAL'
     slip.created_by_id = admin.id
     db.session.add(slip)
@@ -937,6 +1387,11 @@ def approve_payroll_slip(slip_id):
         return jsonify({'status': 'error', 'message': 'Payslip not found.'}), 404
     if slip.status != 'PENDING_APPROVAL':
         return jsonify({'status': 'error', 'message': 'Only pending payslips can be approved.'}), 409
+    from backend.routes.workforce import verify_immutable_storage_ready
+    try:
+        verify_immutable_storage_ready()
+    except RuntimeError as error:
+        return jsonify({'status': 'error', 'message': str(error)}), 503
     slip.status = 'APPROVED'
     slip.approved_by_id = admin.id
     slip.approved_at = datetime.now(timezone.utc)
@@ -953,14 +1408,119 @@ def sign_payroll_slip(slip_id):
         return jsonify({'status': 'error', 'message': 'Payslip was not found for this account.'}), 404
     if slip.status != 'APPROVED':
         return jsonify({'status': 'error', 'message': 'This payslip must be approved before it can be signed.'}), 409
+    if slip.signed_pdf_sha256:
+        return jsonify({'status': 'error', 'message': 'This paystub already has an immutable signed document.'}), 409
     data = request_data()
-    if data.get('receipt_confirmed') is not True or data.get('paystub_confirmed') is not True:
-        return jsonify({'status': 'error', 'message': 'Confirm both payslip receipt and paystub agreement.'}), 400
+    if (
+        data.get('receipt_confirmed') is not True
+        or data.get('paystub_confirmed') is not True
+        or slip.salary_advance > 0 and data.get('advance_confirmed') is not True
+    ):
+        return jsonify({
+            'status': 'error',
+            'message': 'Confirm receipt, paystub review, and the separate salary advance notice where applicable.',
+        }), 400
+    from backend.routes.workforce import (
+        build_signed_pdf,
+        parse_signature,
+        parse_signature_metadata,
+        upload_immutable_pdf,
+    )
+    try:
+        signature = parse_signature(data)
+        device_id, latitude, longitude = parse_signature_metadata(data)
+    except ValueError as error:
+        return jsonify({'status': 'error', 'message': str(error)}), 400
+
     signed_at = datetime.now(timezone.utc)
-    slip.receipt_signed_at = slip.receipt_signed_at or signed_at
-    slip.paystub_signed_at = slip.paystub_signed_at or signed_at
+    employee_name = user.display_name or user.driver_name or user.email
+    acknowledgement_body = (
+        f"Employee: {employee_name}\nPay period: {slip.pay_period}\n"
+        f"Gross salary: KES {slip.gross_pay:,.2f}\n"
+        f"Standard payroll deductions: KES {slip.deductions:,.2f}\n"
+        f"NSSF: {format_payroll_amount(slip.nssf_deduction)}\n"
+        f"SHIF: {format_payroll_amount(slip.shif_deduction)}\n"
+        f"Housing levy: {format_payroll_amount(slip.housing_levy_deduction)}\n"
+        f"Taxable pay: {format_payroll_amount(slip.taxable_pay)}\n"
+        f"Tax charged: {format_payroll_amount(slip.tax_charged)}\n"
+        f"Personal relief: {format_payroll_amount(slip.personal_relief)}\n"
+        f"Other reliefs: {format_payroll_amount(slip.other_reliefs)}\n"
+        f"PAYE: {format_payroll_amount(slip.paye_tax)}\n"
+        f"Salary Advance / Early Cashout: KES {slip.salary_advance:,.2f}\n"
+        f"Net pay: KES {slip.net_pay:,.2f}\n\n"
+        "I confirm receipt of this paystub and acknowledge the listed earnings, "
+        "standard payroll deductions, and net pay. "
+    )
+    if slip.salary_advance > 0:
+        acknowledgement_body += (
+            f"I separately acknowledge and consent that KES {slip.salary_advance:,.2f} "
+            "is a Salary Advance / Early Cashout and is to be offset against final trip "
+            "settlements as permitted by applicable law and the applicable written agreement. "
+            "This records receipt and consent and does not waive rights under applicable law."
+        )
+    else:
+        acknowledgement_body += "No salary advance or early cashout is listed on this paystub."
+    ip_address = request.remote_addr
+    pdf = build_signed_pdf(
+        f'Paystub acknowledgement · {slip.pay_period}',
+        acknowledgement_body,
+        signature,
+        signed_at,
+        device_id,
+        ip_address,
+        latitude,
+        longitude,
+    )
+    try:
+        object_key, version_id, digest = upload_immutable_pdf(pdf)
+    except RuntimeError as error:
+        return jsonify({'status': 'error', 'message': str(error)}), 503
+    slip.receipt_signed_at = signed_at
+    slip.paystub_signed_at = signed_at
+    if slip.salary_advance > 0:
+        slip.advance_signed_at = signed_at
+    slip.signed_pdf_object_key = object_key
+    slip.signed_pdf_version_id = version_id
+    slip.signed_pdf_sha256 = digest
+    slip.signature_device_id = device_id
+    slip.signature_ip_address = ip_address
+    slip.signature_latitude = latitude
+    slip.signature_longitude = longitude
     db.session.commit()
-    return jsonify({'status': 'success', 'slip': slip.to_dict()}), 200
+    return jsonify({
+        'status': 'success',
+        'slip': slip.to_dict(),
+        'signed_at': signed_at.isoformat(),
+        'sha256': digest,
+    }), 200
+
+
+@portal_bp.get('/payroll/<int:slip_id>/signed-document')
+@jwt_required()
+def download_signed_payroll_document(slip_id):
+    user = current_user()
+    slip = db.session.get(PayrollSlip, slip_id)
+    if not user or not slip or (
+        slip.employee_id != user.id and user.role not in ADMIN_ROLES
+    ):
+        return jsonify({'status': 'error', 'message': 'Signed paystub was not found for this account.'}), 404
+    if not slip.signed_pdf_object_key or not slip.signed_pdf_version_id or not slip.signed_pdf_sha256:
+        return jsonify({'status': 'error', 'message': 'This paystub does not have a verified signed PDF.'}), 404
+    from backend.routes.workforce import download_verified_pdf
+    try:
+        contents = download_verified_pdf(
+            slip.signed_pdf_object_key,
+            slip.signed_pdf_version_id,
+            slip.signed_pdf_sha256,
+        )
+    except RuntimeError as error:
+        return jsonify({'status': 'error', 'message': str(error)}), 500
+    return send_file(
+        io.BytesIO(contents),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f'{slip.pay_period}-signed-paystub.pdf',
+    )
 
 
 @portal_bp.get('/mechanic-reports')

@@ -10,6 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const navLink = document.querySelector('[data-target-tab="tracking"]');
   const adminTools = document.getElementById('tracking-admin-tools');
   const assignmentForm = document.getElementById('shipment-assignment-form');
+  const destinationRatesForm = document.getElementById('destination-rates-upload-form');
+  const destinationRatesPreview = document.getElementById('destination-rates-preview');
+  const destinationRatesImport = document.getElementById('destination-rates-import-button');
+  const destinationRatesStatus = document.getElementById('destination-rates-status');
   const roleForm = document.getElementById('account-role-form');
   const adminStatus = document.getElementById('tracking-admin-status');
   const accountRole = document.getElementById('account-role-value');
@@ -25,8 +29,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const goodsCompanySelect = document.getElementById('goods-company-select');
   const goodsDeliverySelect = document.getElementById('goods-delivery-select');
   const goodsDeliveryDetails = document.getElementById('goods-delivery-details');
+  const clientInTransitPanel = document.getElementById('client-in-transit-panel');
+  const clientInTransitList = document.getElementById('client-in-transit-list');
+  const podSignaturePanel = document.getElementById('client-pod-signature-panel');
+  const podSignatureForm = document.getElementById('client-pod-signature-form');
+  const podSignatureCanvas = document.getElementById('client-pod-signature-canvas');
+  const podSignatureContext = podSignatureCanvas.getContext('2d');
+  const podSignatureStatus = document.getElementById('client-pod-status');
+  const podSignatureSummary = document.getElementById('client-pod-shipment-summary');
+  const podSignatureSubmit = document.getElementById('client-pod-submit-signature');
+  const podDownloadButton = document.getElementById('client-pod-download');
+  let hasPodSignature = false;
   let shipments = [];
   let clientAccounts = [];
+  let pendingRatePreview = null;
+  let trackingPollTimer = null;
 
   function setStatus(message, state = 'info') {
     statusMessage.textContent = message;
@@ -56,6 +73,72 @@ document.addEventListener('DOMContentLoaded', () => {
     return data;
   }
 
+  function renderClientTransitGoods() {
+    const isClient = window.DifanApp?.state?.currentUser?.role === 'client';
+    clientInTransitPanel.hidden = !isClient;
+    if (!isClient) return;
+
+    clientInTransitList.replaceChildren();
+    const currentLoads = shipments.filter((shipment) =>
+      ['IN_TRANSIT', 'BREAKDOWN'].includes(shipment.status),
+    );
+    if (!currentLoads.length) {
+      const empty = document.createElement('p');
+      empty.className = 'workflow-empty';
+      empty.textContent = 'There are no goods currently in transit for your account.';
+      clientInTransitList.appendChild(empty);
+      return;
+    }
+
+    currentLoads.forEach((shipment) => {
+      const card = document.createElement('article');
+      card.className = 'shipment-access-card';
+      const details = document.createElement('div');
+      const heading = document.createElement('strong');
+      heading.textContent = `${shipment.cargo_type} · ${shipment.tonnage} tonnes`;
+      details.appendChild(heading);
+
+      const reference = document.createElement('p');
+      reference.textContent = `${shipment.tracking_number} · ${shipment.status.replaceAll('_', ' ')}`;
+      details.appendChild(reference);
+
+      const route = document.createElement('p');
+      route.textContent = `${shipment.origin} → ${shipment.destination}`;
+      details.appendChild(route);
+
+      const driver = document.createElement('p');
+      driver.textContent = `Driver: ${shipment.assigned_driver_name || 'Assignment pending'} · Departed: ${shipment.departed_at ? new Date(shipment.departed_at).toLocaleString() : 'Not recorded'}`;
+      details.appendChild(driver);
+
+      if (shipment.delivery_due_at) {
+        const deadline = document.createElement('p');
+        deadline.textContent = `Delivery window: ${new Date(shipment.delivery_due_at).toLocaleString()}`;
+        details.appendChild(deadline);
+      }
+      if (shipment.deliveries?.length) {
+        const goodsList = document.createElement('ul');
+        goodsList.className = 'shipment-delivery-summary';
+        shipment.deliveries.forEach((delivery) => {
+          const item = document.createElement('li');
+          item.textContent = `${delivery.goods_description || 'Goods'} · ${delivery.destination || shipment.destination}${delivery.customer_name ? ` · ${delivery.customer_name}` : ''}`;
+          goodsList.appendChild(item);
+        });
+        details.appendChild(goodsList);
+      }
+
+      const trackButton = document.createElement('button');
+      trackButton.type = 'button';
+      trackButton.className = 'btn btn-secondary';
+      trackButton.textContent = 'Track load';
+      trackButton.addEventListener('click', () => {
+        trackingInput.value = shipment.tracking_number;
+        loadShipment(shipment.tracking_number);
+      });
+      card.append(details, trackButton);
+      clientInTransitList.appendChild(card);
+    });
+  }
+
   function renderAccessibleShipments() {
     accessibleList.replaceChildren();
     if (!shipments.length) {
@@ -63,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
       empty.className = 'workflow-empty';
       empty.textContent = 'No shipments are assigned to this account yet.';
       accessibleList.appendChild(empty);
+      renderClientTransitGoods();
       return;
     }
 
@@ -109,20 +193,62 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       card.append(info, trackButton);
       if (window.DifanApp?.state?.currentUser?.role === 'driver' &&
-          ['AWAITING_DISPATCH', 'IN_TRANSIT'].includes(shipment.status)) {
+          ['ASSIGNED', 'AWAITING_DISPATCH', 'IN_TRANSIT'].includes(shipment.status)) {
+        let clientSelect = null;
+        const canStartTrip = ['ASSIGNED', 'AWAITING_DISPATCH'].includes(shipment.status);
+        if (canStartTrip && !shipment.client_user_id) {
+          const clientField = document.createElement('div');
+          clientField.className = 'field';
+          const clientLabel = document.createElement('label');
+          clientLabel.textContent = 'Client company loaded for';
+          clientSelect = document.createElement('select');
+          clientSelect.required = true;
+          clientSelect.setAttribute('aria-label', 'Client company loaded for');
+          const placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = 'Select the client company';
+          clientSelect.appendChild(placeholder);
+          clientAccounts.forEach((account) => {
+            const option = document.createElement('option');
+            option.value = String(account.id);
+            option.textContent = `${account.company_name} — ${account.display_name || account.email}`;
+            if (
+              shipment.company_name
+              && shipment.company_name.trim().toLocaleLowerCase() === account.company_name.trim().toLocaleLowerCase()
+            ) {
+              option.selected = true;
+            }
+            clientSelect.appendChild(option);
+          });
+          clientField.append(clientLabel, clientSelect);
+          card.appendChild(clientField);
+        }
         const statusButton = document.createElement('button');
         statusButton.type = 'button';
         statusButton.className = 'btn btn-primary';
-        statusButton.textContent = shipment.status === 'AWAITING_DISPATCH' ? 'Start trip' : 'Mark delivered';
+        statusButton.textContent = canStartTrip
+          ? (shipment.client_user_id ? 'Start trip' : 'Confirm company and start trip')
+          : 'Mark delivered';
+        if (clientSelect) {
+          statusButton.disabled = !clientSelect.value;
+          clientSelect.addEventListener('change', () => {
+            statusButton.disabled = !clientSelect.value;
+          });
+        }
         statusButton.addEventListener('click', async () => {
+          if (clientSelect && !clientSelect.value) {
+            setStatus('Select the client company loaded for this shipment before starting the trip.', 'error');
+            return;
+          }
           statusButton.disabled = true;
           try {
-            await apiRequest(`http://localhost:5000/api/shipments/${encodeURIComponent(shipment.tracking_number)}/status`, {
+            const statusUpdate = { status: canStartTrip ? 'IN_TRANSIT' : 'DELIVERED' };
+            if (clientSelect) statusUpdate.client_user_id = Number(clientSelect.value);
+            const updated = await apiRequest(`http://localhost:5000/api/shipments/${encodeURIComponent(shipment.tracking_number)}/status`, {
               method: 'PATCH',
-              body: JSON.stringify({
-                status: shipment.status === 'AWAITING_DISPATCH' ? 'IN_TRANSIT' : 'DELIVERED',
-              }),
+              body: JSON.stringify(statusUpdate),
             });
+            document.dispatchEvent(new CustomEvent('shipment:loaded', { detail: updated.shipment }));
             await loadAvailableShipments();
           } catch (error) {
             setStatus(error.message || 'Could not update the shipment status.', 'error');
@@ -133,6 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       accessibleList.appendChild(card);
     });
+    renderClientTransitGoods();
   }
 
   function replaceSelectOptions(select, records, placeholder) {
@@ -186,11 +313,133 @@ document.addEventListener('DOMContentLoaded', () => {
     goodsDeliveryDetails.appendChild(list);
   }
 
+  function clearPodSignature() {
+    podSignatureContext.fillStyle = '#fff';
+    podSignatureContext.fillRect(0, 0, podSignatureCanvas.width, podSignatureCanvas.height);
+    podSignatureContext.beginPath();
+    hasPodSignature = false;
+  }
+
+  function refreshPodSignaturePanel() {
+    const isClient = window.DifanApp?.state?.currentUser?.role === 'client';
+    podSignaturePanel.hidden = !isClient;
+    if (!isClient) return;
+
+    const shipment = shipments.find((item) => item.tracking_number === goodsDeliverySelect.value);
+    if (!shipment) {
+      podSignatureSummary.textContent = 'Select a delivery to see its signing status.';
+      podSignatureStatus.textContent = '';
+      podSignatureForm.hidden = true;
+      podDownloadButton.hidden = true;
+      return;
+    }
+
+    podSignatureSummary.textContent =
+      `${shipment.tracking_number} · ${shipment.cargo_type}, ${shipment.tonnage} tonnes · ` +
+      `${shipment.origin} to ${shipment.destination}`;
+    if (shipment.pod_signed_at) {
+      podSignatureForm.hidden = true;
+      podDownloadButton.hidden = false;
+      podSignatureStatus.textContent =
+        `Signed by ${shipment.pod_signed_by} on ${new Date(shipment.pod_signed_at).toLocaleString()}.`;
+    } else if (shipment.status === 'DELIVERED') {
+      podSignatureForm.hidden = false;
+      podDownloadButton.hidden = true;
+      podSignatureStatus.textContent = 'Confirm the cargo was received, then sign below.';
+      clearPodSignature();
+    } else {
+      podSignatureForm.hidden = true;
+      podDownloadButton.hidden = true;
+      podSignatureStatus.textContent = 'Electronic sign-off is available after the driver marks this shipment delivered.';
+    }
+  }
+
+  function signaturePoint(event) {
+    const bounds = podSignatureCanvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - bounds.left) * podSignatureCanvas.width / bounds.width,
+      y: (event.clientY - bounds.top) * podSignatureCanvas.height / bounds.height,
+    };
+  }
+
+  podSignatureCanvas.addEventListener('pointerdown', (event) => {
+    podSignatureCanvas.setPointerCapture(event.pointerId);
+    const point = signaturePoint(event);
+    podSignatureContext.beginPath();
+    podSignatureContext.moveTo(point.x, point.y);
+  });
+  podSignatureCanvas.addEventListener('pointermove', (event) => {
+    if (!podSignatureCanvas.hasPointerCapture(event.pointerId)) return;
+    const point = signaturePoint(event);
+    podSignatureContext.lineWidth = 4;
+    podSignatureContext.lineCap = 'round';
+    podSignatureContext.strokeStyle = '#1b3b2b';
+    podSignatureContext.lineTo(point.x, point.y);
+    podSignatureContext.stroke();
+    hasPodSignature = true;
+  });
+  document.getElementById('client-pod-clear-signature').addEventListener('click', clearPodSignature);
+
+  podDownloadButton.addEventListener('click', async () => {
+    const shipment = shipments.find((item) => item.tracking_number === goodsDeliverySelect.value);
+    if (!shipment?.proof_of_delivery_download_url) return;
+    try {
+      const response = await fetch(`http://localhost:5000${shipment.proof_of_delivery_download_url}`, {
+        headers: tokenHeaders(),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'The signed proof of delivery could not be downloaded.');
+      }
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = `${shipment.tracking_number}-signed-proof-of-delivery.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      podSignatureStatus.textContent = error.message || 'The signed proof of delivery could not be downloaded.';
+    }
+  });
+
+  podSignatureForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const shipment = shipments.find((item) => item.tracking_number === goodsDeliverySelect.value);
+    if (!shipment || !hasPodSignature) {
+      podSignatureStatus.textContent = 'Draw your signature before submitting.';
+      return;
+    }
+    podSignatureSubmit.disabled = true;
+    podSignatureStatus.textContent = 'Recording your electronic signature...';
+    try {
+      const data = await apiRequest(
+        `http://localhost:5000/api/shipments/${encodeURIComponent(shipment.tracking_number)}/proof-of-delivery/sign`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            signer_name: document.getElementById('client-pod-signer-name').value.trim(),
+            signature_png: podSignatureCanvas.toDataURL('image/png'),
+          }),
+        },
+      );
+      podSignatureStatus.textContent = data.invoice_created
+        ? `${data.message} Your delivery invoice is now available in Finance.`
+        : data.message;
+      await loadAvailableShipments();
+    } catch (error) {
+      podSignatureStatus.textContent = error.message || 'Unable to record the signature.';
+    } finally {
+      podSignatureSubmit.disabled = false;
+    }
+  });
+
   function refreshGoodsDeliveryOptions() {
     if (!goodsCompanySelect || !goodsDeliverySelect || !goodsDeliveryDetails) return;
     const user = window.DifanApp?.state?.currentUser;
     const role = user?.role;
-    const isAdminOrHr = role === 'admin' || role === 'hr';
+    const isAdminOrHr = ['admin', 'hr', 'boss'].includes(role);
     const companyNames = isAdminOrHr
       ? [...new Set(clientAccounts.map((account) => account.company_name).filter(Boolean))]
       : role === 'client'
@@ -222,6 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
     goodsDeliverySelect.disabled = !companyShipments.length;
     if (companyShipments.length) goodsDeliverySelect.value = companyShipments[0].tracking_number;
     renderGoodsDeliveryDetails();
+    refreshPodSignaturePanel();
   }
 
   function formatStamp(value) {
@@ -315,7 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function refreshGoodsPage() {
     const role = window.DifanApp?.state?.currentUser?.role;
     const isDriver = role === 'driver';
-    const isAdminOrHr = role === 'admin' || role === 'hr';
+    const isAdminOrHr = ['admin', 'hr', 'boss'].includes(role);
     const canDownload = role === 'client' || isAdminOrHr;
     uploadPanel.hidden = !isDriver;
     documentPanel.hidden = !canDownload;
@@ -350,11 +600,15 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const data = await apiRequest('http://localhost:5000/api/shipments');
       shipments = data.shipments || [];
+      const user = window.DifanApp?.state?.currentUser;
+      const isAdminOrHr = ['admin', 'hr', 'boss'].includes(user?.role);
+      if (user?.role === 'driver') {
+        const clientData = await apiRequest('http://localhost:5000/api/shipments/clients');
+        clientAccounts = clientData.clients || [];
+      }
       renderAccessibleShipments();
       setStatus(`${shipments.length} shipment${shipments.length === 1 ? '' : 's'} available to your account.`, 'success');
 
-      const user = window.DifanApp?.state?.currentUser;
-      const isAdminOrHr = user?.role === 'admin' || user?.role === 'hr';
       adminTools.hidden = !isAdminOrHr;
       if (isAdminOrHr) await loadAdminOptions();
       if (user?.role === 'driver' || user?.role === 'client' || isAdminOrHr) {
@@ -370,6 +624,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function loadShipment(trackingNumber) {
     if (!trackingNumber) return;
+    if (trackingPollTimer) clearInterval(trackingPollTimer);
     submitButton.disabled = true;
     details.hidden = true;
     setStatus(`Looking up ${trackingNumber}...`);
@@ -382,6 +637,16 @@ document.addEventListener('DOMContentLoaded', () => {
       details.hidden = false;
       document.dispatchEvent(new CustomEvent('shipment:loaded', { detail: shipment }));
       setStatus(`Shipment ${shipment.tracking_number} found for ${shipment.company_name}.`, 'success');
+      trackingPollTimer = setInterval(async () => {
+        try {
+          const latest = await apiRequest(
+            `http://localhost:5000/api/shipments/track/${encodeURIComponent(shipment.tracking_number)}`
+          );
+          document.dispatchEvent(new CustomEvent('shipment:loaded', { detail: latest.shipment }));
+        } catch (error) {
+          setStatus(error.message || 'Live shipment status could not be refreshed.', 'error');
+        }
+      }, 30_000);
     } catch (error) {
       setStatus(error.message || 'Unable to reach the shipment service.', 'error');
     } finally {
@@ -389,11 +654,129 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function renderRatePreview(rows) {
+    destinationRatesPreview.replaceChildren();
+    rows.forEach((row) => {
+      const tr = document.createElement('tr');
+      const values = [
+        String(row.row_number),
+        row.origin,
+        row.destination,
+        row.truck_type,
+        row.flat_rate_kes === null ? '—' : Number(row.flat_rate_kes).toLocaleString('en-KE', { minimumFractionDigits: 2 }),
+        row.valid ? 'Ready to import' : row.errors.join(' '),
+      ];
+      values.forEach((value) => {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        tr.appendChild(cell);
+      });
+      destinationRatesPreview.appendChild(tr);
+    });
+    if (!rows.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 6;
+      cell.textContent = 'No rate rows were extracted.';
+      row.appendChild(cell);
+      destinationRatesPreview.appendChild(row);
+    }
+  }
+
+  async function loadDestinationRates() {
+    const list = document.getElementById('destination-rates-current');
+    list.replaceChildren();
+    try {
+      const data = await apiRequest('http://localhost:5000/api/shipments/rates');
+      if (!data.rates.length) {
+        const empty = document.createElement('p');
+        empty.className = 'workflow-empty';
+        empty.textContent = 'No destination-specific rates are currently applied. Quotes use the standard estimate.';
+        list.appendChild(empty);
+        return;
+      }
+      data.rates.forEach((rate) => {
+        const card = document.createElement('article');
+        card.className = 'workflow-card';
+        card.textContent =
+          `${rate.origin} → ${rate.destination} · ${rate.truck_name} · KES ${Number(rate.flat_rate_kes).toLocaleString('en-KE', { minimumFractionDigits: 2 })} before VAT · ${rate.source_filename}`;
+        list.appendChild(card);
+      });
+    } catch (error) {
+      const message = document.createElement('p');
+      message.className = 'workflow-empty';
+      message.textContent = error.message || 'Applied destination rates could not be loaded.';
+      list.appendChild(message);
+    }
+  }
+
+  destinationRatesForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    pendingRatePreview = null;
+    destinationRatesImport.hidden = true;
+    destinationRatesPreview.replaceChildren();
+    const file = document.getElementById('destination-rates-file').files[0];
+    if (!file) {
+      destinationRatesStatus.textContent = 'Choose an Excel or PDF rate sheet.';
+      return;
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    const submit = destinationRatesForm.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    destinationRatesStatus.textContent = 'Extracting rate rows for review...';
+    try {
+      const response = await fetch('http://localhost:5000/api/shipments/rates/preview', {
+        method: 'POST',
+        headers: tokenHeaders(),
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Rate-sheet preview failed.');
+      pendingRatePreview = data;
+      renderRatePreview(data.rows);
+      destinationRatesImport.hidden = !data.valid_rows || data.invalid_rows > 0;
+      destinationRatesStatus.textContent =
+        `${data.message} ${data.valid_rows} valid row(s), ${data.invalid_rows} row(s) need correction.`;
+    } catch (error) {
+      destinationRatesStatus.textContent = error.message || 'Rate-sheet preview failed.';
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  destinationRatesImport.addEventListener('click', async () => {
+    if (!pendingRatePreview || pendingRatePreview.invalid_rows || !pendingRatePreview.valid_rows) return;
+    destinationRatesImport.disabled = true;
+    destinationRatesStatus.textContent = 'Applying reviewed destination rates...';
+    try {
+      const data = await apiRequest('http://localhost:5000/api/shipments/rates', {
+        method: 'POST',
+        body: JSON.stringify({
+          source_filename: pendingRatePreview.source_filename,
+          rows: pendingRatePreview.rows,
+        }),
+      });
+      pendingRatePreview = null;
+      destinationRatesImport.hidden = true;
+      destinationRatesStatus.textContent = data.message;
+      await loadDestinationRates();
+    } catch (error) {
+      destinationRatesStatus.textContent = error.message || 'Destination rates could not be applied.';
+    } finally {
+      destinationRatesImport.disabled = false;
+    }
+  });
+
   async function loadAdminOptions() {
     const data = await apiRequest('http://localhost:5000/api/auth/users');
     const users = data.users || [];
-    clientAccounts = users.filter((user) => user.role === 'client');
-    const drivers = users.filter((user) => user.role === 'driver' && user.account_status === 'active');
+    clientAccounts = users.filter((user) => user.role === 'client' && user.account_status === 'active');
+    const drivers = users.filter((user) =>
+      user.role === 'driver'
+      && user.account_status === 'active'
+      && user.employment_status === 'ACTIVE',
+    );
     const companySelect = document.getElementById('assignment-company');
     const driverSelect = document.getElementById('assignment-driver');
     const shipmentSelect = document.getElementById('assignment-shipment');
@@ -414,8 +797,10 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    const uniqueCompanies = [...new Set(clientAccounts.map((user) => user.company_name))];
-    setOptions(companySelect, uniqueCompanies.map((company) => ({ value: company, label: company })), 'Select client company');
+    setOptions(companySelect, clientAccounts.map((account) => ({
+      value: String(account.id),
+      label: `${account.company_name} — ${account.display_name || account.email}`,
+    })), 'Select client account');
     setOptions(driverSelect, drivers.map((user) => ({
       value: String(user.id),
       label: `${user.display_name || user.driver_name || user.email} (${user.email})`,
@@ -431,13 +816,14 @@ document.addEventListener('DOMContentLoaded', () => {
       label: `${user.email} — ${user.role}${user.account_status === 'pending' ? ' (pending)' : ''}`,
     })), 'Select account');
 
-    const noAssignmentTargets = !uniqueCompanies.length || !drivers.length;
+    const noAssignmentTargets = !clientAccounts.length || !drivers.length;
     assignmentForm.querySelector('button[type="submit"]').disabled = noAssignmentTargets || !shipments.length;
     if (noAssignmentTargets) {
       adminStatus.textContent = 'Create client accounts and provision driver accounts before assigning shipments.';
     } else {
       adminStatus.textContent = '';
     }
+    await loadDestinationRates();
   }
 
   form.addEventListener('submit', (event) => {
@@ -451,10 +837,15 @@ document.addEventListener('DOMContentLoaded', () => {
     adminStatus.textContent = 'Saving shipment assignment...';
     try {
       const trackingNumber = document.getElementById('assignment-shipment').value;
+      const clientAccount = clientAccounts.find(
+        (account) => String(account.id) === document.getElementById('assignment-company').value,
+      );
+      if (!clientAccount) throw new Error('Select an active client account.');
       await apiRequest(`http://localhost:5000/api/shipments/${encodeURIComponent(trackingNumber)}/assignment`, {
         method: 'PATCH',
         body: JSON.stringify({
-          company_name: document.getElementById('assignment-company').value,
+          client_user_id: clientAccount.id,
+          company_name: clientAccount.company_name,
           driver_user_id: Number(document.getElementById('assignment-driver').value),
           destination: document.getElementById('assignment-destination').value.trim(),
         }),
@@ -533,7 +924,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   documentSelect.addEventListener('change', () => loadShipmentDocuments(documentSelect.value));
   goodsCompanySelect.addEventListener('change', refreshGoodsDeliveryOptions);
-  goodsDeliverySelect.addEventListener('change', renderGoodsDeliveryDetails);
+  goodsDeliverySelect.addEventListener('change', () => {
+    renderGoodsDeliveryDetails();
+    refreshPodSignaturePanel();
+  });
   if (navLink) navLink.addEventListener('click', loadAvailableShipments);
   if (goodsNavLink) goodsNavLink.addEventListener('click', refreshGoodsPage);
   window.addEventListener('difan:session-ready', loadAvailableShipments);

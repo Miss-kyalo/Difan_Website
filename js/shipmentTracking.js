@@ -33,39 +33,6 @@ const destinationIcon = L.divIcon({
   iconAnchor: [8, 8],
 });
 
-function getRoutePosition(waypoints, progressPercentage) {
-  const segmentDistances = waypoints.slice(1).map((point, index) => {
-    const [lat1, lon1] = waypoints[index];
-    const [lat2, lon2] = point;
-    const toRadians = (degrees) => (degrees * Math.PI) / 180;
-    const latitudeDelta = toRadians(lat2 - lat1);
-    const longitudeDelta = toRadians(lon2 - lon1);
-    const haversine =
-      Math.sin(latitudeDelta / 2) ** 2 +
-      Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
-        Math.sin(longitudeDelta / 2) ** 2;
-    return 6371 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
-  });
-  const routeDistance = segmentDistances.reduce((total, distance) => total + distance, 0);
-  let distanceAlongRoute = (routeDistance * progressPercentage) / 100;
-
-  for (let index = 0; index < segmentDistances.length; index += 1) {
-    const segmentDistance = segmentDistances[index];
-    if (distanceAlongRoute <= segmentDistance) {
-      const segmentProgress = segmentDistance === 0 ? 0 : distanceAlongRoute / segmentDistance;
-      const [startLat, startLon] = waypoints[index];
-      const [endLat, endLon] = waypoints[index + 1];
-      return [
-        startLat + (endLat - startLat) * segmentProgress,
-        startLon + (endLon - startLon) * segmentProgress,
-      ];
-    }
-    distanceAlongRoute -= segmentDistance;
-  }
-
-  return waypoints[waypoints.length - 1];
-}
-
 // Helper component to auto-recenter the map when driver coordinates update
 function RecenterMap({ position }) {
   const map = useMap();
@@ -87,25 +54,28 @@ function RecenterMap({ position }) {
 }
 
 const MAPS_API_URL = import.meta.env.VITE_MAPS_API_URL || 'http://localhost:8000';
+const HUB_COORDINATES = {
+  'Athi River Industrial Zone': [-1.4583, 36.9806],
+  'Nairobi Inland Container Depot (ICD)': [-1.3211, 36.8783],
+  'Mombasa Port Terminal': [-4.0435, 39.6682],
+  'Nakuru Freight Bypass': [-0.2833, 36.0667],
+  'Eldoret Logistics Hub': [0.5143, 35.2698],
+  'Kisumu Central Warehouse': [-0.0917, 34.7680],
+};
+const DEFAULT_ORIGIN_COORDINATES = HUB_COORDINATES['Athi River Industrial Zone'];
+
+function coordinatesForHub(name) {
+  return HUB_COORDINATES[name] || DEFAULT_ORIGIN_COORDINATES;
+}
 
 export default function ShipmentTrackingPage({
   trackingNumber = 'DL-8492',
-  imei = '864201048291034',
+  imei = '',
   onBack,
 }) {
-  // Waypoint Coordinates (Athi River ➔ Nakuru ➔ Kisumu)
-  const originCoords = [-1.4583, 36.9806];
-  const destinationCoords = [-0.0917, 34.7680];
-  const routeWaypoints = [
-    originCoords,
-    [-0.2833, 36.0667], // Nakuru Waypoint
-    [-0.1022, 35.2833], // Kericho Waypoint
-    destinationCoords,
-  ];
-
   const [shipment, setShipment] = useState({
     id: trackingNumber,
-    imei: imei,
+    imei,
     status: 'IN_TRANSIT',
     origin: 'Athi River Industrial Zone',
     destination: 'Kisumu Central Warehouse',
@@ -114,20 +84,13 @@ export default function ShipmentTrackingPage({
     deliveries: [],
     destinationVerified: false,
     tonnage: 15,
-    progressPercentage: 45,
-    speedKmH: 68,
-    distanceRemainingKm: 185,
-    etaMinutes: 165,
-    currentCoords: getRoutePosition(routeWaypoints, 45),
-    lastUpdated: 'Just now',
-    driver: {
-      name: 'Samuel M.',
-      phone: '+254 712 345 678',
-      rating: 4.92,
-      truckModel: 'Scania R500 (3-Axle Heavy)',
-      plateNumber: 'KDC 849L',
-      avatar: 'S',
-    },
+    progressPercentage: 0,
+    speedKmH: null,
+    distanceRemainingKm: null,
+    etaMinutes: null,
+    currentCoords: DEFAULT_ORIGIN_COORDINATES,
+    lastUpdated: 'Waiting for GPS',
+    driver: { name: 'Driver not assigned', phone: '', avatar: 'D' },
   });
 
   const [isProtrackConnected, setIsProtrackConnected] = useState(false);
@@ -135,9 +98,11 @@ export default function ShipmentTrackingPage({
   const [callStatus, setCallStatus] = useState(null);
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState([
-    { sender: 'driver', text: 'Cargo loaded securely. Protrack GPS lock active.', time: '08:30 AM' },
-    { sender: 'driver', text: 'Passing Nakuru bypass, smooth transit speed.', time: '10:15 AM' },
+    { sender: 'driver', text: 'Shipment messages are available after a driver is assigned.', time: '—' },
   ]);
+  const originCoords = coordinatesForHub(shipment.origin);
+  const destinationCoords = coordinatesForHub(shipment.destination);
+  const routeWaypoints = [originCoords, destinationCoords];
 
   useEffect(() => {
     const handleShipmentLoaded = (event) => {
@@ -155,6 +120,16 @@ export default function ShipmentTrackingPage({
         destinationVerified: record.destination_verified === true,
         tonnage: record.tonnage ?? previous.tonnage,
         imei: record.imei || previous.imei,
+        departedAt: record.departed_at || null,
+        arrivedAt: record.arrived_at || null,
+        podSignedAt: record.pod_signed_at || null,
+        podSignedBy: record.pod_signed_by || null,
+        progressPercentage: 0,
+        speedKmH: null,
+        distanceRemainingKm: null,
+        etaMinutes: null,
+        currentCoords: coordinatesForHub(record.origin || previous.origin),
+        lastUpdated: 'Waiting for GPS',
       }));
     };
 
@@ -175,7 +150,7 @@ export default function ShipmentTrackingPage({
       })
       .catch((error) => {
         if (isMounted) {
-          console.warn('Maps service is unavailable. Showing the simulated route.', error);
+          console.warn('Maps service is unavailable. Live GPS tracking is disabled.', error);
           setProtrackConfigured(false);
         }
       });
@@ -187,7 +162,7 @@ export default function ShipmentTrackingPage({
 
   useEffect(() => {
     const fetchTelemetry = async () => {
-      if (protrackConfigured) {
+      if (protrackConfigured && shipment.imei) {
         try {
           const response = await fetch(
             `${MAPS_API_URL}/api/protrack/track?imeis=${encodeURIComponent(shipment.imei)}`,
@@ -219,7 +194,7 @@ export default function ShipmentTrackingPage({
           }
           setIsProtrackConnected(false);
         } catch (error) {
-          console.warn('GPS telemetry failed. Switching to the simulated route.', error);
+          console.warn('GPS telemetry request failed. Live GPS tracking is unavailable.', error);
           setProtrackConfigured(false);
           setIsProtrackConnected(false);
         }
@@ -227,26 +202,16 @@ export default function ShipmentTrackingPage({
         setIsProtrackConnected(false);
       }
 
-      // Use the existing simulated route when GPS credentials or service are unavailable.
-      setShipment((prev) => {
-        if (prev.progressPercentage >= 98) return prev;
-        const newProgress = Math.min(100, prev.progressPercentage + 1);
-        const newDist = Math.max(0, prev.distanceRemainingKm - 2);
-        const newEta = Math.max(0, prev.etaMinutes - 2);
-
-        return {
-          ...prev,
-          progressPercentage: newProgress,
-          distanceRemainingKm: newDist,
-          etaMinutes: newEta,
-          currentCoords: getRoutePosition(routeWaypoints, newProgress),
-          speedKmH: Math.floor(62 + Math.random() * 10),
-          lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-      });
+      setShipment((previous) => ({
+        ...previous,
+        speedKmH: null,
+        distanceRemainingKm: null,
+        etaMinutes: null,
+        lastUpdated: 'Waiting for GPS',
+      }));
     };
 
-    const interval = setInterval(fetchTelemetry, 4000);
+    const interval = setInterval(fetchTelemetry, 30_000);
     return () => clearInterval(interval);
   }, [shipment.imei, protrackConfigured]);
 
@@ -275,12 +240,25 @@ export default function ShipmentTrackingPage({
     }, 1500);
   };
 
+  const shipmentStatusOrder = {
+    REQUESTED: 0,
+    PLANNED: 1,
+    ASSIGNED: 1,
+    AWAITING_DISPATCH: 1,
+    IN_TRANSIT: 2,
+    BREAKDOWN: 2,
+    DELIVERED: 3,
+  };
+  const activeStage = shipment.podSignedAt
+    ? 4
+    : shipmentStatusOrder[shipment.status] ?? 0;
+  const formatEventTime = (value) => value ? new Date(value).toLocaleString() : 'Not recorded';
   const timelineSteps = [
-    { key: 'BOOKED', label: 'Order Confirmed', desc: 'Dispatch escrow locked', time: '07:45 AM', completed: true },
-    { key: 'DRIVER_ASSIGNED', label: 'Driver Assigned', desc: `Protrack Tracker Paired (IMEI: ${shipment.imei.slice(-6)})`, time: '08:10 AM', completed: true },
-    { key: 'IN_TRANSIT', label: 'In Transit', desc: 'En route via Protrack OpenStreetMap', time: '08:35 AM', completed: true, active: true },
-    { key: 'ARRIVED_DESTINATION', label: 'Arrival at Dropoff', desc: 'Geofence trigger & offload', time: 'Est. 02:45 PM', completed: false },
-    { key: 'COMPLETED', label: 'Delivery Signed', desc: 'E-POD signed & payout released', time: 'Pending', completed: false },
+    { key: 'BOOKED', label: 'Order requested', desc: 'Shipment request received', time: 'Recorded in account', completed: true },
+    { key: 'DRIVER_ASSIGNED', label: 'Driver assigned', desc: shipment.assignedDriverName || 'Awaiting dispatch assignment', time: shipmentStatusOrder[shipment.status] >= 1 ? 'Assigned' : 'Pending', completed: shipmentStatusOrder[shipment.status] >= 1 },
+    { key: 'IN_TRANSIT', label: shipment.status === 'BREAKDOWN' ? 'Breakdown reported' : 'In transit', desc: 'Shipment status reported by the assigned driver', time: formatEventTime(shipment.departedAt), completed: shipmentStatusOrder[shipment.status] >= 2, active: activeStage === 2 },
+    { key: 'ARRIVED_DESTINATION', label: 'Arrived at destination', desc: 'Arrival reported by the assigned driver', time: formatEventTime(shipment.arrivedAt), completed: shipmentStatusOrder[shipment.status] >= 3, active: activeStage === 3 },
+    { key: 'COMPLETED', label: 'Customer proof of delivery', desc: shipment.podSignedBy ? `Signed by ${shipment.podSignedBy}` : 'Waiting for customer signature', time: formatEventTime(shipment.podSignedAt), completed: Boolean(shipment.podSignedAt), active: activeStage === 4 },
   ];
 
   return (
@@ -355,15 +333,15 @@ export default function ShipmentTrackingPage({
         <div className="tracking-metrics">
           <div className="tracking-metric">
             <p>ETA remaining</p>
-            <p>{Math.floor(shipment.etaMinutes / 60)}h {shipment.etaMinutes % 60}m</p>
+            <p>{shipment.etaMinutes === null ? 'Unavailable' : `${Math.floor(shipment.etaMinutes / 60)}h ${shipment.etaMinutes % 60}m`}</p>
           </div>
           <div className="tracking-metric">
             <p>Distance remaining</p>
-            <p>{shipment.distanceRemainingKm} km</p>
+            <p>{shipment.distanceRemainingKm === null ? 'Unavailable' : `${shipment.distanceRemainingKm} km`}</p>
           </div>
           <div className="tracking-metric">
             <p>Current speed</p>
-            <p>{shipment.speedKmH} km/h</p>
+            <p>{shipment.speedKmH === null ? 'Unavailable' : `${shipment.speedKmH} km/h`}</p>
           </div>
         </div>
       </details>
@@ -377,7 +355,7 @@ export default function ShipmentTrackingPage({
             <div className="tracking-map-header">
               <div>
                 <h2>Shipment route</h2>
-                <p>{isProtrackConnected ? 'Live GPS location' : 'Simulated route'} · Last update {shipment.lastUpdated}</p>
+                <p>{isProtrackConnected ? `Live GPS location · Last update ${shipment.lastUpdated}` : 'Live GPS is unavailable. Showing the planned route only.'}</p>
               </div>
             </div>
 
@@ -412,14 +390,15 @@ export default function ShipmentTrackingPage({
                     </Popup>
                   </Marker>
 
-                  {/* Live Truck Marker */}
-                  <Marker position={shipment.currentCoords} icon={truckIcon}>
-                    <Popup className="text-xs">
-                      <strong>Driver:</strong> {shipment.driver.name}<br />
-                      <strong>Speed:</strong> {shipment.speedKmH} km/h<br />
-                      <strong>Coordinates:</strong> {shipment.currentCoords[0].toFixed(4)}, {shipment.currentCoords[1].toFixed(4)}
-                    </Popup>
-                  </Marker>
+                  {isProtrackConnected && (
+                    <Marker position={shipment.currentCoords} icon={truckIcon}>
+                      <Popup className="text-xs">
+                        <strong>Driver:</strong> {shipment.assignedDriverName || 'Assigned driver'}<br />
+                        <strong>Speed:</strong> {shipment.speedKmH ?? '—'} km/h<br />
+                        <strong>Coordinates:</strong> {shipment.currentCoords[0].toFixed(4)}, {shipment.currentCoords[1].toFixed(4)}
+                      </Popup>
+                    </Marker>
+                  )}
 
                   {/* Destination Marker */}
                   <Marker position={destinationCoords} icon={destinationIcon}>
@@ -432,14 +411,8 @@ export default function ShipmentTrackingPage({
             </div>
             <div className="tracking-map-progress">
               <div className="tracking-map-progress-label">
-                <span>Route progress</span>
-                <span>{shipment.progressPercentage}%</span>
-              </div>
-              <div className="tracking-progress-track">
-                <div
-                  className="tracking-progress-fill"
-                  style={{ width: `${shipment.progressPercentage}%` }}
-                />
+                <span>GPS location</span>
+                <span>{isProtrackConnected ? `Updated ${shipment.lastUpdated}` : 'Unavailable'}</span>
               </div>
             </div>
           </div>
@@ -563,7 +536,7 @@ export default function ShipmentTrackingPage({
                 <p className="text-xs text-slate-400">Route Status Preview</p>
               </div>
               <span className="text-[10px] font-bold text-blue-400 bg-blue-950 px-2 py-0.5 rounded border border-blue-800">
-                MAP TRACKING
+                {isProtrackConnected ? 'LIVE GPS' : 'PLANNED ROUTE'}
               </span>
             </div>
 
@@ -601,13 +574,12 @@ export default function ShipmentTrackingPage({
             </div>
 
             <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700/60 space-y-2 text-xs">
-              <div className="flex justify-between text-slate-300 font-bold">
-                <span>Escrow Protection:</span>
-                <span className="text-amber-400 font-mono">50% Locked</span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Automated payout triggers upon reaching destination geofence coordinates.
-              </p>
+            <p className="text-slate-300 font-bold">Delivery status: {shipment.status.replaceAll('_', ' ')}</p>
+            <p className="text-[11px] text-slate-400">
+              {shipment.podSignedBy
+                ? `Proof of delivery signed by ${shipment.podSignedBy} on ${formatEventTime(shipment.podSignedAt)}.`
+                : 'Customer sign-off is recorded after delivery.'}
+            </p>
             </div>
           </div>
           </details>

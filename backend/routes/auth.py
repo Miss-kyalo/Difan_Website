@@ -1,18 +1,24 @@
+import secrets
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+import httpx
+from flask import Blueprint, current_app, jsonify, request
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager, create_access_token, get_jwt_identity, jwt_required
+from sqlalchemy import func, or_
 from backend.models.payroll import db
 
 bcrypt = Bcrypt()
 jwt = JWTManager()
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api')
-ADMIN_ROLES = {'admin', 'boss'}
+ADMIN_ROLES = {'admin', 'boss', 'hr'}
 HR_ROLES = {'hr', 'boss'}
-PUBLIC_EMPLOYEE_ROLES = {'driver', 'mechanic', 'accountant', 'admin', 'hr'}
-EMPLOYEE_ROLES = PUBLIC_EMPLOYEE_ROLES | {'boss'}
+EMPLOYEE_ROLES = {'driver', 'mechanic', 'accountant', 'admin', 'hr', 'boss'}
+
+
+class MailDeliveryError(Exception):
+    pass
 
 
 def request_data():
@@ -33,6 +39,17 @@ class UserAccount(db.Model):
     account_status = db.Column(db.String(20), nullable=False, default='active')
     approved_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=True)
     approved_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    username = db.Column(db.String(80), unique=True, nullable=True)
+    must_change_password = db.Column(db.Boolean, nullable=False, default=False)
+    notification_email = db.Column(db.String(120), nullable=True)
+    driver_code = db.Column(db.String(20), unique=True, nullable=True)
+    employment_status = db.Column(db.String(24), nullable=False, default='ACTIVE')
+    leave_type = db.Column(db.String(16), nullable=True)
+    employment_status_note = db.Column(db.String(500), nullable=True)
+    employment_status_updated_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    employment_status_updated_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=True)
+    leaderboard_opt_in = db.Column(db.Boolean, nullable=False, default=False)
+    leaderboard_handle = db.Column(db.String(40), nullable=True)
 
     def set_password(self, password):
         self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
@@ -45,98 +62,135 @@ class UserAccount(db.Model):
             'id': self.id,
             'company_name': self.company_name,
             'email': self.email,
+            'notification_email': self.notification_email,
             'role': self.role or 'client',
             'driver_name': self.driver_name,
             'display_name': self.display_name or self.driver_name,
             'account_status': self.account_status,
             'approved_at': self.approved_at.isoformat() if self.approved_at else None,
+            'username': self.username,
+            'must_change_password': self.must_change_password,
+            'employment_status': self.employment_status,
+            'leave_type': self.leave_type,
+            'driver_code': self.driver_code,
+            'leaderboard_opt_in': self.leaderboard_opt_in,
+            'leaderboard_handle': self.leaderboard_handle,
         }
+
+
+def send_onboarding_email(account_email, recipient_email, username, temporary_password, role):
+    api_key = current_app.config.get('SENDGRID_API_KEY')
+    sender = current_app.config.get('MAIL_FROM_EMAIL')
+    if not api_key or not sender:
+        raise MailDeliveryError(
+            'Account email delivery is not configured. Set SENDGRID_API_KEY and MAIL_FROM_EMAIL.'
+        )
+
+    login_name = username or account_email
+    message = (
+        f'Your Difan Logistics {role} account is ready.\n\n'
+        f'Username: {login_name}\n'
+        f'Temporary password: {temporary_password}\n\n'
+        'Sign in using these credentials. You will be required to change your password '
+        'before accessing the portal.'
+    )
+    try:
+        response = httpx.post(
+            'https://api.sendgrid.com/v3/mail/send',
+            headers={'Authorization': f'Bearer {api_key}'},
+            json={
+                'personalizations': [{'to': [{'email': recipient_email}]}],
+                'from': {'email': sender},
+                'subject': 'Your Difan Logistics account',
+                'content': [{'type': 'text/plain', 'value': message}],
+            },
+            timeout=10,
+        )
+    except httpx.HTTPError as error:
+        raise MailDeliveryError('The account email could not be sent. Please try again.') from error
+    if response.status_code != 202:
+        raise MailDeliveryError(
+            'The email provider rejected the account email. Check the sender and API configuration.'
+        )
+
+
+def ensure_main_accounts():
+    shared_email = current_app.config.get('MAIN_ACCOUNT_EMAIL')
+    if (
+        not shared_email
+        or not current_app.config.get('SENDGRID_API_KEY')
+        or not current_app.config.get('MAIL_FROM_EMAIL')
+    ):
+        current_app.logger.warning(
+            'Main Boss and HR accounts were not provisioned because SendGrid is not configured.'
+        )
+        return
+
+    for username, role, display_name in (
+        ('DifanMain', 'boss', 'Difan Boss'),
+        ('DifanSecond', 'hr', 'Difan HR'),
+    ):
+        account = UserAccount.query.filter_by(username=username).first()
+        if account:
+            continue
+
+        temporary_password = secrets.token_urlsafe(18)
+        account_email = f'{username.lower()}@difan.local'
+        account = UserAccount(
+            company_name='Difan Logistics',
+            email=account_email,
+            notification_email=shared_email,
+            username=username,
+            role=role,
+            display_name=display_name,
+            account_status='active',
+            must_change_password=True,
+        )
+        account.set_password(temporary_password)
+        db.session.add(account)
+        try:
+            db.session.flush()
+            send_onboarding_email(account_email, shared_email, username, temporary_password, role)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception('Unable to provision the %s main account.', role)
+            raise
 
 
 @auth_bp.route('/auth/register', methods=['POST'])
 def register():
-    data = request_data()
-    company_name = data.get('company_name', '')
-    email = data.get('email', '')
-    password = data.get('password', '')
-
-    if not all(isinstance(value, str) for value in (company_name, email, password)):
-        return jsonify({'status': 'error', 'message': 'Company name, email, and password must be text values.'}), 400
-    company_name = company_name.strip()
-    email = email.strip().lower()
-    if not company_name or not email or not password:
-        return jsonify({'status': 'error', 'message': 'Company name, email, and password are required.'}), 400
-
-    if len(password) < 12:
-        return jsonify({'status': 'error', 'message': 'Password must be at least 12 characters long.'}), 400
-
-    if UserAccount.query.filter_by(email=email).first():
-        return jsonify({'status': 'error', 'message': 'An account with this email already exists.'}), 400
-
-    user = UserAccount()
-    user.company_name = company_name
-    user.email = email
-    user.role = 'client'
-    user.set_password(password)
-    db.session.add(user)
-    db.session.commit()
-
     return jsonify({
-        'status': 'success',
-        'message': 'Account created successfully! You can now log in.'
-    }), 201
+        'status': 'error',
+        'message': 'Client accounts are created by Difan HR. Please contact Difan Logistics.',
+    }), 403
 
 
 @auth_bp.route('/auth/register/employee', methods=['POST'])
 def register_employee():
-    data = request_data()
-    display_name = data.get('display_name', '')
-    email = data.get('email', '')
-    password = data.get('password', '')
-    role = data.get('role')
-
-    if not all(isinstance(value, str) for value in (display_name, email, password, role)):
-        return jsonify({'status': 'error', 'message': 'Name, email, password, and employee role are required.'}), 400
-    display_name = display_name.strip()
-    email = email.strip().lower()
-    if not display_name or not email or not password:
-        return jsonify({'status': 'error', 'message': 'Name, email, and password are required.'}), 400
-    if role not in PUBLIC_EMPLOYEE_ROLES:
-        return jsonify({'status': 'error', 'message': 'Choose a supported employee role.'}), 400
-    if len(display_name) > 120 or len(email) > 120:
-        return jsonify({'status': 'error', 'message': 'Name and email must be 120 characters or fewer.'}), 400
-    if len(password) < 12:
-        return jsonify({'status': 'error', 'message': 'Password must be at least 12 characters long.'}), 400
-    if UserAccount.query.filter_by(email=email).first():
-        return jsonify({'status': 'error', 'message': 'An account with this email already exists.'}), 409
-
-    user = UserAccount()
-    user.company_name = 'Difan Logistics'
-    user.email = email
-    user.role = role
-    user.driver_name = display_name if role == 'driver' else None
-    user.display_name = display_name
-    user.account_status = 'pending'
-    user.set_password(password)
-    db.session.add(user)
-    db.session.commit()
     return jsonify({
-        'status': 'success',
-        'message': 'Registration submitted. HR must approve your account before you can sign in.',
-    }), 201
+        'status': 'error',
+        'message': 'Employee accounts are created by Difan HR. Please contact Difan Logistics.',
+    }), 403
 
 
 @auth_bp.route('/auth/login', methods=['POST'])
 def login():
     data = request_data()
-    email = data.get('email', '')
+    identifier = data.get('username', data.get('email', ''))
     password = data.get('password', '')
     selected_role = data.get('role')
 
-    if not isinstance(email, str) or not isinstance(password, str) or not email.strip() or not password:
-        return jsonify({'status': 'error', 'message': 'Email and password are required.'}), 400
+    if not isinstance(identifier, str) or not isinstance(password, str) or not identifier.strip() or not password:
+        return jsonify({'status': 'error', 'message': 'Username or email and password are required.'}), 400
 
-    user = UserAccount.query.filter_by(email=email.strip().lower()).first()
+    normalized_identifier = identifier.strip()
+    user = UserAccount.query.filter(
+        or_(
+            func.lower(UserAccount.email) == normalized_identifier.lower(),
+            func.lower(UserAccount.username) == normalized_identifier.lower(),
+        )
+    ).first()
     if not user or not user.check_password(password):
         return jsonify({'status': 'error', 'message': 'Invalid email or password.'}), 401
     if user.account_status != 'active':
@@ -152,7 +206,10 @@ def login():
             'message': 'The selected portal does not match the role assigned to this account.',
         }), 403
 
-    token = create_access_token(identity=str(user.id))
+    token = create_access_token(
+        identity=str(user.id),
+        additional_claims={'must_change_password': user.must_change_password},
+    )
 
     return jsonify({
         'status': 'success',
@@ -172,6 +229,47 @@ def get_current_user():
         return jsonify({'status': 'error', 'message': 'This account is not active.'}), 403
 
     return jsonify({'status': 'success', 'user': user.to_dict()}), 200
+
+
+@jwt.token_verification_loader
+def allow_forced_password_change_only(header, payload):
+    if not payload.get('must_change_password'):
+        return True
+    return request.endpoint == 'auth.change_password'
+
+
+@jwt.token_verification_failed_loader
+def reject_forced_password_change(header, payload):
+    return jsonify({
+        'status': 'error',
+        'message': 'Change your temporary password before accessing the portal.',
+        'must_change_password': True,
+    }), 403
+
+
+@auth_bp.route('/auth/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    user = db.session.get(UserAccount, int(get_jwt_identity()))
+    if not user or user.account_status != 'active':
+        return jsonify({'status': 'error', 'message': 'This account is not active.'}), 403
+
+    data = request_data()
+    password = data.get('password', '')
+    if not isinstance(password, str) or len(password) < 12:
+        return jsonify({'status': 'error', 'message': 'Password must be at least 12 characters long.'}), 400
+    if user.check_password(password):
+        return jsonify({'status': 'error', 'message': 'Choose a password different from your temporary password.'}), 400
+
+    user.set_password(password)
+    user.must_change_password = False
+    db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'message': 'Password changed successfully.',
+        'token': create_access_token(identity=str(user.id)),
+        'user': user.to_dict(),
+    }), 200
 
 
 def require_admin_or_hr():
@@ -223,6 +321,8 @@ def approve_employee_registration(user_id):
         return jsonify({'status': 'error', 'message': 'This employee registration is no longer pending.'}), 409
 
     account.account_status = 'active'
+    if account.role == 'driver' and not account.driver_code:
+        account.driver_code = f'DRV-{account.id:04d}'
     account.approved_by_id = approver.id
     account.approved_at = datetime.now(timezone.utc)
     db.session.commit()
@@ -264,6 +364,8 @@ def update_user_role(user_id):
     account.role = role
     account.driver_name = display_name.strip() if role == 'driver' else None
     account.display_name = display_name.strip() if role in EMPLOYEE_ROLES else None
+    if role == 'driver' and not account.driver_code:
+        account.driver_code = f'DRV-{account.id:04d}'
     db.session.commit()
     return jsonify({'status': 'success', 'user': account.to_dict()}), 200
 
@@ -272,27 +374,24 @@ def update_user_role(user_id):
 @jwt_required()
 def create_user():
     admin = require_admin_or_hr()
-    if not admin or admin.role not in ADMIN_ROLES:
-        return jsonify({'status': 'error', 'message': 'Admin access is required.'}), 403
+    if not admin or admin.role not in HR_ROLES:
+        return jsonify({'status': 'error', 'message': 'HR or Boss access is required.'}), 403
 
     data = request_data()
     company_name = data.get('company_name', '')
     email = data.get('email', '')
-    password = data.get('password', '')
     role = data.get('role')
     display_name = data.get('display_name', '')
-    if not all(isinstance(value, str) for value in (company_name, email, password, display_name)):
+    if not all(isinstance(value, str) for value in (company_name, email, display_name)):
         return jsonify({'status': 'error', 'message': 'Account fields must be text values.'}), 400
     company_name = company_name.strip()
     email = email.strip().lower()
     display_name = display_name.strip()
-    if not company_name or not email or not password:
+    if not company_name or not email:
         return jsonify({
             'status': 'error',
-            'message': 'Company or department, email, and an initial password are required.',
+            'message': 'Company or department and email are required.',
         }), 400
-    if len(password) < 12:
-        return jsonify({'status': 'error', 'message': 'The initial password must be at least 12 characters.'}), 400
     if not isinstance(role, str) or role not in {'client', *EMPLOYEE_ROLES}:
         return jsonify({'status': 'error', 'message': 'Choose a supported account role.'}), 400
     active_boss = UserAccount.query.filter_by(role='boss', account_status='active').first()
@@ -303,6 +402,7 @@ def create_user():
     if UserAccount.query.filter_by(email=email).first():
         return jsonify({'status': 'error', 'message': 'An account with this email already exists.'}), 409
 
+    temporary_password = secrets.token_urlsafe(18)
     account = UserAccount()
     account.company_name = company_name
     account.email = email
@@ -310,7 +410,30 @@ def create_user():
     account.driver_name = display_name if role == 'driver' else None
     account.display_name = display_name or None
     account.account_status = 'active'
-    account.set_password(password)
+    account.approved_by_id = admin.id
+    account.approved_at = datetime.now(timezone.utc)
+    account.must_change_password = True
+    account.set_password(temporary_password)
     db.session.add(account)
-    db.session.commit()
-    return jsonify({'status': 'success', 'user': account.to_dict()}), 201
+    try:
+        db.session.flush()
+        if role == 'driver':
+            account.driver_code = f'DRV-{account.id:04d}'
+        send_onboarding_email(email, email, account.username, temporary_password, role)
+        db.session.commit()
+    except MailDeliveryError as error:
+        db.session.rollback()
+        status_code = 503 if 'not configured' in str(error) else 502
+        return jsonify({'status': 'error', 'message': str(error)}), status_code
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Unable to create and email an onboarding account.')
+        return jsonify({
+            'status': 'error',
+            'message': 'The account could not be created or its onboarding email could not be sent.',
+        }), 500
+    return jsonify({
+        'status': 'success',
+        'message': f'{role.title()} account created and temporary credentials emailed to {email}.',
+        'user': account.to_dict(),
+    }), 201

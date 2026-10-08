@@ -218,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderFleetBoard() {
-        const isAdmin = ['admin', 'hr'].includes(getCurrentUser().role);
+        const isAdmin = ['admin', 'hr', 'boss'].includes(getCurrentUser().role);
         const vehicles = [
             { registration: 'KDA-482P', driver: 'John Doe', status: 'In Transit', destination: 'Mombasa', location: 'Athi River' },
             { registration: 'KDA-8821', driver: 'John Mwangi', status: 'Breakdown', destination: '', location: 'Salama Corridor (A109)' },
@@ -253,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function render() {
         const role = getCurrentUser().role;
         const isDriver = role === 'driver';
-        const isFleetManager = role === 'admin' || role === 'hr';
+        const isFleetManager = ['admin', 'hr', 'boss'].includes(role);
         const isClient = role === 'client';
         driverGoodsWorkflow.hidden = !isDriver;
         fleetGoodsReturnsPanel.hidden = !isFleetManager;
@@ -362,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     switchRequestsView.addEventListener('click', event => {
         const button = event.target.closest('[data-switch-action]');
-        if (!button || !['admin', 'hr'].includes(getCurrentUser().role)) return;
+        if (!button || !['admin', 'hr', 'boss'].includes(getCurrentUser().role)) return;
 
         const requests = readRecords(STORAGE_KEYS.switches);
         const request = requests.find(item => item.id === button.dataset.switchId);

@@ -3,13 +3,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const registrationList = document.getElementById('employee-registration-list');
   const registrationStatus = document.getElementById('employee-registration-status');
   const refreshButton = document.getElementById('refresh-employee-registrations');
+  const onboardingPanel = document.getElementById('account-onboarding-panel');
+  const onboardingForm = document.getElementById('account-onboarding-form');
+  const onboardingType = document.getElementById('onboarding-account-type');
+  const onboardingNameField = document.getElementById('onboarding-name-field');
+  const onboardingName = document.getElementById('onboarding-name');
+  const onboardingStatus = document.getElementById('account-onboarding-status');
   const ratePanel = document.getElementById('container-rate-admin');
   const rateForm = document.getElementById('container-rate-form');
   const rateStatus = document.getElementById('container-rate-status');
   const employeeNavigation = document.getElementById('employees-navigation');
+  const onboardingNavigation = document.getElementById('onboarding-navigation');
+  const onboardingView = document.getElementById('view-onboarding');
+  const enquiriesPanel = document.getElementById('transport-enquiries-panel');
+  const enquiriesList = document.getElementById('transport-enquiries-list');
+  const enquiriesStatus = document.getElementById('transport-enquiries-status');
   if (!approvalPanel || !registrationList || !rateForm) return;
 
-  const adminRoles = new Set(['admin', 'hr']);
+  const adminRoles = new Set(['admin', 'hr', 'boss']);
 
   function getToken() {
     const token = localStorage.getItem('jwt_token');
@@ -101,17 +112,117 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function loadTransportEnquiries() {
+    if (!enquiriesList || !enquiriesStatus) return;
+    enquiriesList.replaceChildren();
+    enquiriesStatus.textContent = 'Loading public transport enquiries...';
+    try {
+      const data = await apiRequest('/api/portal/transport-enquiries');
+      if (!data.enquiries.length) {
+        enquiriesStatus.textContent = 'There are no transport enquiries.';
+        return;
+      }
+      enquiriesStatus.textContent = `${data.enquiries.length} transport ${data.enquiries.length === 1 ? 'enquiry' : 'enquiries'}.`;
+      for (const enquiry of data.enquiries) {
+        const card = document.createElement('article');
+        card.className = 'workflow-record';
+        const heading = document.createElement('h3');
+        heading.textContent = `${enquiry.company_name} · ${enquiry.status}`;
+        const details = document.createElement('p');
+        details.textContent = `${enquiry.contact_name} · ${enquiry.origin} → ${enquiry.destination} · ${enquiry.cargo_description}${enquiry.tonnage ? ` · ${enquiry.tonnage} tonnes` : ''}${enquiry.pickup_date ? ` · Pickup ${enquiry.pickup_date}` : ''}`;
+        const contact = document.createElement('p');
+        contact.textContent = `${enquiry.email} · ${enquiry.phone} · Received ${new Date(enquiry.created_at).toLocaleString()}`;
+        card.append(heading, details, contact);
+        if (enquiry.notes) {
+          const notes = document.createElement('p');
+          notes.textContent = `Additional details: ${enquiry.notes}`;
+          card.appendChild(notes);
+        }
+        const controls = document.createElement('div');
+        controls.className = 'workflow-actions';
+        const state = document.createElement('select');
+        [
+          ['OPEN', 'Open'],
+          ['CONTACTED', 'Contacted'],
+          ['CLOSED', 'Closed'],
+        ].forEach(([value, label]) => state.add(new Option(label, value)));
+        state.value = enquiry.status;
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.className = 'btn btn-secondary';
+        save.textContent = 'Save follow-up status';
+        save.addEventListener('click', async () => {
+          save.disabled = true;
+          try {
+            await apiRequest(`/api/portal/transport-enquiries/${enquiry.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status: state.value }),
+            });
+            await loadTransportEnquiries();
+          } catch (error) {
+            enquiriesStatus.textContent = error.message || 'Unable to update enquiry status.';
+            save.disabled = false;
+          }
+        });
+        controls.append(state, save);
+        card.appendChild(controls);
+        enquiriesList.appendChild(card);
+      }
+    } catch (error) {
+      enquiriesStatus.textContent = error.message || 'Unable to load transport enquiries.';
+    }
+  }
+
   async function refreshEmployeeTools() {
     const role = window.DifanApp?.state?.currentUser?.role;
     const isAdminOrHr = adminRoles.has(role);
+    const canOnboard = ['hr', 'boss'].includes(role);
     approvalPanel.hidden = !isAdminOrHr;
+    onboardingPanel.hidden = !canOnboard;
+    if (enquiriesPanel) enquiriesPanel.hidden = !isAdminOrHr;
+    if (onboardingNavigation) onboardingNavigation.hidden = !canOnboard;
+    if (onboardingView) onboardingView.hidden = !canOnboard;
     ratePanel.hidden = !isAdminOrHr;
     if (employeeNavigation) employeeNavigation.hidden = !role || role === 'client';
     if (!isAdminOrHr) return;
-    await Promise.all([loadRegistrations(), loadContainerRates()]);
+    await Promise.all([loadRegistrations(), loadContainerRates(), loadTransportEnquiries()]);
   }
 
+  function updateOnboardingFields() {
+    const isEmployee = onboardingType.value !== 'client';
+    onboardingNameField.hidden = !isEmployee;
+    onboardingName.required = isEmployee;
+  }
+
+  onboardingType.addEventListener('change', updateOnboardingFields);
+  updateOnboardingFields();
+  onboardingForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submitButton = document.getElementById('account-onboarding-submit');
+    submitButton.disabled = true;
+    onboardingStatus.textContent = 'Creating account and sending the temporary credentials...';
+    try {
+      const data = await apiRequest('/api/auth/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          role: onboardingType.value,
+          company_name: document.getElementById('onboarding-company').value.trim(),
+          email: document.getElementById('onboarding-email').value.trim(),
+          display_name: onboardingName.value.trim(),
+        }),
+      });
+      onboardingStatus.textContent = data.message;
+      onboardingForm.reset();
+      updateOnboardingFields();
+    } catch (error) {
+      onboardingStatus.textContent = error.message || 'Unable to create the onboarding account.';
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+
   refreshButton.addEventListener('click', loadRegistrations);
+  document.getElementById('refresh-transport-enquiries')?.addEventListener('click', loadTransportEnquiries);
   document.querySelector('[data-target-tab="employees"]')?.addEventListener('click', () => {
     if (adminRoles.has(window.DifanApp?.state?.currentUser?.role)) {
       loadRegistrations();

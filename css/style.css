@@ -1075,7 +1075,7 @@ tr:hover td {
     padding: 16px 0;
 }
 
-.community-highlights span {
+.community-highlights a {
     flex: 0 0 auto;
     padding: 8px 14px;
     color: var(--color-racing-green);
@@ -1086,9 +1086,15 @@ tr:hover td {
     font-weight: 650;
 }
 
+.community-highlights a:hover,
+.community-highlights a:focus-visible {
+    color: var(--color-brass-hover);
+    border-color: var(--color-antique-brass);
+}
+
 .community-highlights i {
     margin-right: 5px;
-    color: var(--color-brass-hover);
+    color: var(--color-antique-brass);
     font-style: normal;
 }
 

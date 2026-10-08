@@ -20,6 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const clientMessageContact = document.getElementById('client-message-contact');
   const clientMessageForm = document.getElementById('client-message-form');
   const staffMessageForm = document.getElementById('staff-message-form');
+  const staffRecipient = document.getElementById('staff-message-recipient');
+  const staffStartForm = document.getElementById('staff-start-conversation-form');
   const staffInboxButton = document.getElementById('staff-inbox-button');
   const selectedThreadTitles = {
     client: document.getElementById('client-thread-title'),
@@ -195,6 +197,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function updateStaffRecipientOptions(selectedContact = '') {
+    if (!staffRecipient) return;
+    staffRecipient.replaceChildren(new Option('Choose a client', ''));
+    for (const contact of availableContacts) {
+      staffRecipient.add(new Option(contact.display_name, String(contact.id)));
+    }
+    if (availableContacts.some((contact) => String(contact.id) === selectedContact)) {
+      staffRecipient.value = selectedContact;
+    }
+  }
+
   async function loadConversations(role) {
     const target = role === 'client' ? clientConversationList : staffConversationList;
     const status = role === 'client' ? clientMessageStatus : staffMessageStatus;
@@ -207,6 +220,10 @@ document.addEventListener('DOMContentLoaded', () => {
         availableContacts = data.contacts;
         clientMessageRole.value = currentRole;
         updateContactOptions(currentContact);
+      } else {
+        const currentRecipient = staffRecipient?.value || '';
+        availableContacts = data.contacts;
+        updateStaffRecipientOptions(currentRecipient);
       }
       renderConversations(target, data.conversations, role);
       const activeConversation = data.conversations.find((item) => item.id === activeConversationId);
@@ -267,6 +284,25 @@ document.addEventListener('DOMContentLoaded', () => {
       await openConversation(data.conversation.id, 'client', data.conversation.peer_name);
     } catch (error) {
       clientMessageStatus.textContent = error.message || 'Unable to start the conversation.';
+    }
+  });
+
+  staffStartForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const clientId = Number(staffRecipient.value);
+    if (!Number.isInteger(clientId) || clientId < 1) return;
+    staffMessageStatus.textContent = 'Opening private conversation...';
+    try {
+      const data = await apiRequest('/api/portal/client-conversations', {
+        method: 'POST',
+        body: JSON.stringify({ client_user_id: clientId }),
+      });
+      activeConversationId = data.conversation.id;
+      await loadConversations('staff');
+      await openConversation(data.conversation.id, 'staff', data.conversation.peer_name);
+      staffMessageStatus.textContent = '';
+    } catch (error) {
+      staffMessageStatus.textContent = error.message || 'Unable to start the conversation.';
     }
   });
 

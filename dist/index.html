@@ -131,6 +131,10 @@
       .tracking-overview h1 { margin: 8px 0 2px; color: #1b3b2b; font: 600 1.7rem Georgia, serif; }
       .tracking-overview p { margin: 0; color: #5a6560; }
       .tracking-connection-status { color: #1b3b2b !important; background: #e5eee5 !important; border-color: #2a5a3b !important; }
+      .workforce-signature-canvas { display: block; width: 100%; max-width: 720px; height: 190px; border: 1px solid #d8d3c8; background: #fff; border-radius: 4px; touch-action: none; }
+      .workforce-lockout { border: 2px solid #9b2c2c; background: #fff5f3; }
+      body.workforce-navigation-lockout #view-breakdowns .breakdown-non-safety { display: none !important; }
+      .workforce-grid { display: grid; gap: 16px; }
       .tracking-disclosure { overflow: hidden; background: #fffdf8; border: 1px solid #d8d3c8; border-radius: 4px; box-shadow: 0 4px 20px rgba(27, 59, 43, .04); }
       .tracking-summary { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 12px 18px; color: #1b3b2b; cursor: pointer; list-style: none; font-weight: 700; }
       .tracking-summary::-webkit-details-marker { display: none; }
@@ -151,6 +155,8 @@
       .tracking-map-progress-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; color: #5a6560; font-size: 11px; }
       .tracking-progress-track { height: 5px; overflow: hidden; background: #efebe1; border-radius: 999px; }
       .tracking-progress-fill { height: 100%; background: #1b3b2b; transition: width .25s ease; }
+      #client-pod-signature-canvas { display: block; width: 100%; height: auto; border: 1px solid #d8d3c8; background: #fff; border-radius: 4px; touch-action: none; }
+      .workflow-actions { display: flex; flex-wrap: wrap; gap: 10px; }
       .tracking-main-column { width: 100%; }
       .tracking-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: #efebe1; }
       .tracking-detail-grid > div { padding: 14px 18px; background: #fffdf8; overflow-wrap: anywhere; }
@@ -189,16 +195,14 @@
         .tracking-action-button { width: 100%; }
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-CIoIx-4T.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CDo3IytP.css">
+    <script type="module" crossorigin src="/assets/index-DbCeH2iy.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-rwYSnER3.css">
   </head>
   <body>
     <div id="public-home" class="public-home">
       <header class="public-header">
         <a class="public-brand" href="#" aria-label="Difan Logistics home">DIFAN <span>LOGISTICS</span></a>
         <div class="public-header-actions">
-          <button class="btn btn-secondary" type="button" data-open-employee-signup>Employee registration</button>
-          <button class="btn btn-secondary" type="button" data-open-signup>Client sign up</button>
           <button class="btn btn-primary" type="button" data-open-login>Portal sign in</button>
         </div>
       </header>
@@ -209,9 +213,7 @@
             <h1>Moving business forward, with care at every mile.</h1>
             <p class="public-lead">Difan Logistics delivers dependable cargo transport and practical container services for businesses across Kenya.</p>
             <div class="public-hero-actions">
-              <a class="btn btn-secondary public-cta" href="#public-quote">Calculate quote</a>
               <button class="btn btn-primary public-cta" type="button" data-open-login>Access your Difan account</button>
-              <button class="btn btn-secondary public-cta" type="button" data-open-signup>Open a client account</button>
             </div>
           </div>
           <div class="public-hero-photo">
@@ -221,55 +223,6 @@
               <p>Reliable transport.<br />Responsible handling.<br />Service built around your cargo.</p>
             </div>
           </div>
-        </section>
-        <section id="public-quote" class="public-quote-section" aria-labelledby="public-quote-heading">
-          <div class="public-section-heading">
-            <p class="public-eyebrow">Plan your next load</p>
-            <h2 id="public-quote-heading">Calculate a freight or container quote</h2>
-            <p>Get an estimate without signing in. Prices are VAT-exclusive; the estimate also shows 16% VAT.</p>
-          </div>
-          <form id="public-quote-form" class="public-quote-form">
-            <div class="public-quote-fields">
-              <div class="field">
-                <label for="public-quote-service">Service</label>
-                <select id="public-quote-service" required>
-                  <option value="freight">Truck freight</option>
-                  <option value="20ft">20 ft container</option>
-                  <option value="40ft">40 ft container</option>
-                </select>
-              </div>
-              <div id="public-quote-origin-field" class="field">
-                <label for="public-quote-origin">Origin</label>
-                <select id="public-quote-origin">
-                  <option value="Athi River">Athi River</option>
-                  <option value="Mombasa">Mombasa</option>
-                  <option value="Kisumu">Kisumu</option>
-                  <option value="Malaba">Malaba</option>
-                  <option value="Nakuru">Nakuru</option>
-                </select>
-              </div>
-              <div id="public-quote-destination-field" class="field">
-                <label for="public-quote-destination">Destination</label>
-                <select id="public-quote-destination">
-                  <option value="Mombasa">Mombasa</option>
-                  <option value="Kisumu">Kisumu</option>
-                  <option value="Malaba">Malaba</option>
-                  <option value="Nakuru">Nakuru</option>
-                  <option value="Athi River">Athi River</option>
-                </select>
-              </div>
-              <div id="public-quote-tonnage-field" class="field">
-                <label for="public-quote-tonnage">Cargo weight (tonnes)</label>
-                <input id="public-quote-tonnage" type="number" min="1" max="100" step="1" value="1" required />
-              </div>
-              <div id="public-quote-quantity-field" class="field" hidden>
-                <label for="public-quote-quantity">Number of containers</label>
-                <input id="public-quote-quantity" type="number" min="1" max="100" step="1" value="1" />
-              </div>
-            </div>
-            <button class="btn btn-primary" type="submit">Calculate quote</button>
-            <div id="public-quote-result" class="quote-box" role="status" aria-live="polite"></div>
-          </form>
         </section>
         <section class="public-services" aria-labelledby="services-heading">
           <div class="public-section-heading">
@@ -297,6 +250,29 @@
             </article>
           </div>
         </section>
+        <section class="public-contact" aria-labelledby="transport-enquiry-heading">
+          <div>
+            <p class="public-eyebrow">Request transport</p>
+            <h2 id="transport-enquiry-heading">Tell us about your next delivery.</h2>
+            <p>Send a transport enquiry to the Difan team. No account is needed; our team will follow up using your contact details.</p>
+          </div>
+          <form id="public-transport-enquiry-form" class="workflow-form">
+            <div class="workflow-grid">
+              <div class="field"><label for="enquiry-contact-name">Your name</label><input id="enquiry-contact-name" name="contact_name" maxlength="120" autocomplete="name" required /></div>
+              <div class="field"><label for="enquiry-company">Company</label><input id="enquiry-company" name="company_name" maxlength="120" autocomplete="organization" required /></div>
+              <div class="field"><label for="enquiry-email">Email</label><input id="enquiry-email" name="email" type="email" maxlength="254" autocomplete="email" required /></div>
+              <div class="field"><label for="enquiry-phone">Phone</label><input id="enquiry-phone" name="phone" type="tel" maxlength="40" autocomplete="tel" required /></div>
+              <div class="field"><label for="enquiry-origin">Pickup location</label><input id="enquiry-origin" name="origin" maxlength="200" required /></div>
+              <div class="field"><label for="enquiry-destination">Destination</label><input id="enquiry-destination" name="destination" maxlength="200" required /></div>
+              <div class="field"><label for="enquiry-cargo">Cargo description</label><input id="enquiry-cargo" name="cargo_description" maxlength="500" required /></div>
+              <div class="field"><label for="enquiry-tonnage">Estimated weight (tonnes, optional)</label><input id="enquiry-tonnage" name="tonnage" type="number" min="0.01" max="100" step="0.01" /></div>
+              <div class="field"><label for="enquiry-pickup-date">Requested pickup date (optional)</label><input id="enquiry-pickup-date" name="pickup_date" type="date" /></div>
+              <div class="field workflow-field-wide"><label for="enquiry-notes">Additional details (optional)</label><textarea id="enquiry-notes" name="notes" rows="3" maxlength="2000"></textarea></div>
+            </div>
+            <button id="public-transport-enquiry-submit" class="btn btn-primary" type="submit">Send transport enquiry</button>
+            <p id="public-transport-enquiry-status" class="tracking-status" role="status" aria-live="polite"></p>
+          </form>
+        </section>
         <section class="public-report-invite" aria-labelledby="public-report-heading">
           <div>
             <p class="public-eyebrow">Speak up safely</p>
@@ -310,7 +286,7 @@
             <p class="public-eyebrow">Speak to us</p>
             <h2 id="public-contact-heading">Let’s move your next load.</h2>
             <div class="public-contact-details">
-              <a href="mailto:info@difan-logistocs.com">info@difan-logistocs.com</a>
+              <a href="mailto:info@difan-logistics.com">info@difan-logistics.com</a>
               <div class="public-contact-phones" aria-label="Call Difan Logistics">
                 <a href="tel:0720778812">0720778812</a>
                 <a href="tel:0720253922">0720253922</a>
@@ -369,8 +345,8 @@
             </select>
           </div>
           <div class="login-field">
-            <label for="login-email">Email Address</label>
-            <input id="login-email" type="email" placeholder="name@company.com" required />
+            <label for="login-email">Username or email address</label>
+            <input id="login-email" type="text" autocomplete="username" placeholder="name@company.com or DifanMain" required />
           </div>
           <div class="login-field">
             <label for="login-password">Password</label>
@@ -384,78 +360,26 @@
 
           <button id="login-submit" class="login-btn" type="submit">Sign In</button>
         </form>
-        <p class="login-secondary-action">New to Difan? <button type="button" data-open-signup>Create a client account</button> or <button type="button" data-open-employee-signup>register as an employee</button></p>
+        <p class="login-note">Client and employee accounts are set up by Difan HR. Contact Difan Logistics to request access.</p>
       </div>
     </div>
 
-    <div id="signup-screen" class="login-shell" style="display:none;">
+    <div id="password-change-screen" class="login-shell" style="display:none;">
       <div class="login-card">
-        <button class="login-home-link" type="button" data-open-home>← Back to Difan Logistics</button>
-        <h1>Client <span>Registration</span></h1>
-        <p>Create an account to request freight quotes and access client shipment services.</p>
-        <div id="signup-message" class="login-error" role="status" aria-live="polite"></div>
-        <form id="signup-form">
+        <h1>Set your <span>password</span></h1>
+        <p>Your temporary password must be replaced before you can access your account.</p>
+        <div id="password-change-message" class="login-error" role="status" aria-live="polite"></div>
+        <form id="password-change-form">
           <div class="login-field">
-            <label for="signup-company">Company name</label>
-            <input id="signup-company" type="text" maxlength="120" autocomplete="organization" required />
+            <label for="new-password">New password (12 characters minimum)</label>
+            <input id="new-password" type="password" minlength="12" autocomplete="new-password" required />
           </div>
           <div class="login-field">
-            <label for="signup-email">Email address</label>
-            <input id="signup-email" type="email" maxlength="120" autocomplete="email" required />
+            <label for="new-password-confirm">Confirm new password</label>
+            <input id="new-password-confirm" type="password" minlength="12" autocomplete="new-password" required />
           </div>
-          <div class="login-field">
-            <label for="signup-password">Create password</label>
-            <input id="signup-password" type="password" minlength="12" autocomplete="new-password" required />
-          </div>
-          <div class="login-field">
-            <label for="signup-password-confirm">Confirm password</label>
-            <input id="signup-password-confirm" type="password" minlength="12" autocomplete="new-password" required />
-          </div>
-          <button id="signup-submit" class="login-btn" type="submit">Create client account</button>
+          <button id="password-change-submit" class="login-btn" type="submit">Change password</button>
         </form>
-        <p class="login-secondary-action">Already registered? <button type="button" data-open-login>Sign in</button></p>
-        <p class="login-secondary-action">Employee? <button type="button" data-open-employee-signup>Register for HR approval</button></p>
-        <p class="login-note">Employee applications are reviewed by HR before sign-in is enabled.</p>
-      </div>
-    </div>
-
-    <div id="employee-signup-screen" class="login-shell" style="display:none;">
-      <div class="login-card">
-        <button class="login-home-link" type="button" data-open-home>← Back to Difan Logistics</button>
-        <h1>Employee <span>Registration</span></h1>
-        <p>Submit your details to HR. Sign-in is enabled after approval.</p>
-        <div id="employee-signup-message" class="login-error" role="status" aria-live="polite"></div>
-        <form id="employee-signup-form">
-          <div class="login-field">
-            <label for="employee-signup-name">Full name</label>
-            <input id="employee-signup-name" type="text" maxlength="120" autocomplete="name" required />
-          </div>
-          <div class="login-field">
-            <label for="employee-signup-role">Employee role</label>
-            <select id="employee-signup-role" required>
-              <option value="">Choose your role</option>
-              <option value="driver">Driver</option>
-              <option value="mechanic">Mechanic</option>
-              <option value="admin">Admin</option>
-              <option value="accountant">Accounts</option>
-              <option value="hr">HR</option>
-            </select>
-          </div>
-          <div class="login-field">
-            <label for="employee-signup-email">Email address</label>
-            <input id="employee-signup-email" type="email" maxlength="120" autocomplete="email" required />
-          </div>
-          <div class="login-field">
-            <label for="employee-signup-password">Create password</label>
-            <input id="employee-signup-password" type="password" minlength="12" autocomplete="new-password" required />
-          </div>
-          <div class="login-field">
-            <label for="employee-signup-password-confirm">Confirm password</label>
-            <input id="employee-signup-password-confirm" type="password" minlength="12" autocomplete="new-password" required />
-          </div>
-          <button id="employee-signup-submit" class="login-btn" type="submit">Submit for HR approval</button>
-        </form>
-        <p class="login-secondary-action">Already approved? <button type="button" data-open-login>Sign in</button></p>
       </div>
     </div>
 
@@ -473,6 +397,8 @@
             <a href="#" id="finance-navigation" class="nav-link" data-target-tab="finance">Finance</a>
             <a href="#" id="messages-navigation" class="nav-link" data-target-tab="messages" hidden>Messages</a>
             <a href="#" id="employees-navigation" class="nav-link" data-target-tab="employees" hidden>Employees</a>
+            <a href="#" id="onboarding-navigation" class="nav-link" data-target-tab="onboarding" hidden>Onboarding</a>
+            <a href="#" id="workforce-navigation" class="nav-link" data-target-tab="workforce" hidden>Payroll & HR</a>
             <a href="#" id="reports-navigation" class="nav-link" data-target-tab="reports" hidden>Reports</a>
           </nav>
           <div class="header-account-actions">
@@ -547,13 +473,13 @@
               <span class="community-cover-mark" aria-hidden="true">D</span>
             </div>
             <div class="community-highlights" aria-label="Community channels">
-              <span><i>✦</i> Client notices</span>
-              <span><i>↗</i> Private messages</span>
-              <span><i>◎</i> Difan support</span>
+              <a href="#client-notices-home" data-target-tab="dashboard" data-target-section="client-notices-home"><i>✦</i> Client notices</a>
+              <a href="#" data-target-tab="messages"><i>↗</i> Private messages</a>
+              <a href="mailto:info@difan-logistics.com"><i>◎</i> Difan support</a>
             </div>
             <div id="client-community-view" class="community-layout" hidden>
               <div class="community-feed-column">
-                <section class="community-side-card">
+                <section id="client-notices-home" class="community-side-card">
                   <p class="profile-eyebrow">Noticeboard</p>
                   <h3>Updates from Difan</h3>
                   <p>Operational information and service notices shared by Admin, HR, and Accounts.</p>
@@ -635,9 +561,10 @@
                 <form id="client-start-conversation-form" class="client-message-start">
                   <label for="client-message-role">Choose a role</label>
                   <select id="client-message-role" required>
-                    <option value="">Choose Admin, HR, or Accounts</option>
+                    <option value="">Choose Admin, HR, Boss, or Accounts</option>
                     <option value="admin">Admin</option>
                     <option value="hr">HR</option>
+                    <option value="boss">Boss</option>
                     <option value="accountant">Accounts</option>
                   </select>
                   <label for="client-message-contact">Difan contact</label>
@@ -664,7 +591,14 @@
               <aside class="community-side-card client-message-panel">
                 <p class="profile-eyebrow">Client inbox</p>
                 <h3>Conversations</h3>
-                <p>Only clients who contacted your account appear here.</p>
+                <form id="staff-start-conversation-form" class="client-message-start">
+                  <label for="staff-message-recipient">Choose a client recipient</label>
+                  <select id="staff-message-recipient" required>
+                    <option value="">Choose a client</option>
+                  </select>
+                  <button class="btn btn-secondary" type="submit">Start conversation</button>
+                </form>
+                <p>Existing conversations and new client messages appear below.</p>
                 <div id="staff-conversation-list" class="client-conversation-list"></div>
               </aside>
               <section class="client-message-panel">
@@ -687,12 +621,178 @@
               <div>
                 <p class="profile-eyebrow">Boss access only</p>
                 <h2>Anonymous reports</h2>
-                <p class="muted">Reports are submitted without account identity. Only this Boss portal can view report details and attachments.</p>
+                <p class="muted">Reports are submitted without account identity. Only the Boss portal can view report details and attachments.</p>
               </div>
               <button id="refresh-anonymous-reports" class="btn btn-secondary" type="button">Refresh reports</button>
             </div>
             <p id="anonymous-reports-status" class="tracking-status" role="status" aria-live="polite">Reports load when this page is opened.</p>
             <div id="anonymous-report-list" class="workflow-records"></div>
+          </section>
+        </div>
+
+        <div id="view-workforce" class="tab-view" hidden>
+          <section id="workforce-lockout-panel" class="rounded-box workforce-lockout" hidden role="alert">
+            <h2>Action required: acknowledge your records</h2>
+            <p>You must review and sign each pending paystub, terms update, or consent agreement before returning to other app features. Safety & emergency reporting remains available below.</p>
+            <div id="workforce-pending-list" class="workforce-grid"></div>
+            <div id="workforce-signing-panel" hidden>
+              <h3 id="workforce-signing-title"></h3>
+              <div id="workforce-signing-document" class="tracking-status"></div>
+              <p class="muted">The signed record includes the server timestamp, browser device ID, IP address observed by the app, and GPS coordinates when location is available and permitted. If you deny or cannot provide GPS, that is recorded and the signature can still be completed.</p>
+              <div id="workforce-signing-confirmations" class="workforce-grid"></div>
+              <div class="field">
+                <label for="workforce-signature-canvas">Draw your electronic signature</label>
+                <canvas id="workforce-signature-canvas" class="workforce-signature-canvas" width="900" height="240" aria-label="Draw your electronic signature"></canvas>
+              </div>
+              <p id="workforce-location-status" class="muted">Location is requested when you sign. If unavailable or declined, the record will note that GPS was unavailable.</p>
+              <button id="workforce-clear-signature" class="btn btn-secondary" type="button">Clear signature</button>
+              <button id="workforce-submit-signature" class="btn btn-primary" type="button">Acknowledge and sign</button>
+              <p id="workforce-signing-status" class="tracking-status" role="status" aria-live="polite"></p>
+            </div>
+          </section>
+
+          <section class="rounded-box">
+            <h2>My paystubs, terms & consent</h2>
+            <p class="muted">Salary advances are shown separately as “Salary Advance / Early Cashout”. Electronic signatures are timestamped and stored as encrypted, immutable PDFs.</p>
+            <div class="workflow-actions">
+              <div class="field"><label for="workforce-payroll-year">Payroll year</label><select id="workforce-payroll-year"></select></div>
+              <button id="workforce-download-own-p9" class="btn btn-secondary" type="button">Download my P9 annual summary</button>
+            </div>
+            <p id="workforce-p9-status" class="tracking-status" role="status" aria-live="polite"></p>
+            <div id="workforce-payroll-list" class="workforce-grid"></div>
+            <div id="workforce-notice-list" class="workforce-grid"></div>
+          </section>
+
+          <section id="workforce-driver-cases" class="rounded-box" hidden>
+            <h2>HR records and your right to respond</h2>
+            <p class="muted">You may submit one written rebuttal and supporting evidence within 72 hours. This response remains available while required payroll acknowledgements are pending.</p>
+            <div id="workforce-driver-case-list" class="workforce-grid"></div>
+          </section>
+
+          <section id="workforce-driver-score-panel" class="rounded-box" hidden>
+            <h2>Driver performance</h2>
+            <p class="muted">Score = 0.35 × Safety + 0.30 × Customer Rating + 0.25 × On-Time Delivery − 0.10 × HR Infraction Penalty. HR infractions decay across a rolling 90-day window.</p>
+            <div id="workforce-driver-score" class="tracking-status"></div>
+            <form id="workforce-leaderboard-form" class="workflow-form">
+              <label><input id="workforce-leaderboard-opt-in" type="checkbox" /> Show my score on the public fleet leaderboard</label>
+              <div class="field">
+                <label for="workforce-leaderboard-handle">Public handle or driver ID</label>
+                <input id="workforce-leaderboard-handle" maxlength="40" />
+              </div>
+              <button class="btn btn-secondary" type="submit">Save leaderboard preference</button>
+            </form>
+            <div id="workforce-driver-feedback" class="workforce-grid"></div>
+          </section>
+          <section id="workforce-driver-client-rating-panel" class="rounded-box" hidden>
+            <h2>Rate a client facility</h2>
+            <p class="muted">After signed delivery, rate loading speed and facility friendliness for the client company.</p>
+            <form id="workforce-driver-client-rating-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field"><label for="workforce-driver-client-shipment">Delivered shipment</label><select id="workforce-driver-client-shipment" required></select></div>
+                <div class="field"><label for="workforce-driver-loading-stars">Loading speed</label><select id="workforce-driver-loading-stars" required><option value="5">5 · Very fast</option><option value="4">4 · Good</option><option value="3">3 · Average</option><option value="2">2 · Slow</option><option value="1">1 · Very slow</option></select></div>
+                <div class="field"><label for="workforce-driver-facility-stars">Facility friendliness</label><select id="workforce-driver-facility-stars" required><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="3">3 · Average</option><option value="2">2 · Poor</option><option value="1">1 · Very poor</option></select></div>
+                <div class="field workflow-field-wide"><label for="workforce-driver-client-feedback">Feedback (optional)</label><textarea id="workforce-driver-client-feedback" rows="3" maxlength="1000"></textarea></div>
+              </div>
+              <button class="btn btn-primary" type="submit">Submit client rating</button>
+            </form>
+            <p id="workforce-driver-client-rating-status" class="tracking-status" role="status" aria-live="polite"></p>
+          </section>
+
+          <section class="rounded-box">
+            <h2>Fleet leaderboard</h2>
+            <p class="muted">Only drivers who opt in are shown. Customer and on-time metrics are monthly; HR infractions decay over 90 days.</p>
+            <div id="workforce-leaderboard" class="workforce-grid"></div>
+          </section>
+
+          <section id="workforce-hr-dashboard" class="rounded-box" hidden>
+            <section id="workforce-client-leaderboard-panel">
+              <h2>Top-rated client facilities</h2>
+              <p class="muted">Aggregated driver feedback on loading speed and facility friendliness, based on completed deliveries.</p>
+              <div id="workforce-client-leaderboard" class="workforce-grid"></div>
+            </section>
+            <h2>HR driver availability</h2>
+            <p class="muted">Drivers not marked Active are excluded from dispatch assignment.</p>
+            <div id="workforce-driver-status-list" class="workforce-grid"></div>
+            <h2>Issue a formal HR record</h2>
+            <form id="workforce-case-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field">
+                  <label for="workforce-case-driver">Driver</label>
+                  <select id="workforce-case-driver" required></select>
+                </div>
+                <div class="field">
+                  <label for="workforce-case-type">Record type</label>
+                  <select id="workforce-case-type" required>
+                    <option value="WRITTEN_REPRIMAND">Formal written reprimand</option>
+                    <option value="MINOR_INFRACTION">Minor infraction</option>
+                    <option value="VERBAL_WARNING">Verbal warning</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="workforce-case-severity">Score severity</label>
+                  <select id="workforce-case-severity" required>
+                    <option value="MINOR_LATE_ARRIVAL">Minor Late Arrival · −2</option>
+                    <option value="CARGO_MISMANAGEMENT">Cargo Mismanagement · −5</option>
+                    <option value="UNEXCUSED_ABSENCE">Unexcused Absence · −10</option>
+                    <option value="SAFETY_COMPLIANCE">Safety Compliance Violation · −20</option>
+                  </select>
+                </div>
+                <div class="field workflow-field-wide">
+                  <label for="workforce-case-details">Incident details</label>
+                  <textarea id="workforce-case-details" rows="4" maxlength="3000" required></textarea>
+                </div>
+                <div class="field workflow-field-wide">
+                  <label for="workforce-case-evidence">Photo/document evidence (up to 5 files, 5 MB each)</label>
+                  <input id="workforce-case-evidence" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple />
+                </div>
+              </div>
+              <button class="btn btn-primary" type="submit">Issue HR record</button>
+            </form>
+            <p id="workforce-case-status" class="tracking-status" role="status" aria-live="polite"></p>
+            <h2>HR records and driver rebuttals</h2>
+            <div id="workforce-case-list" class="workforce-grid"></div>
+            <h2>Safety reports</h2>
+            <div id="workforce-emergency-list" class="workforce-grid"></div>
+          </section>
+
+          <section id="workforce-payroll-admin" class="rounded-box" hidden>
+            <h2>Issue a paystub</h2>
+            <form id="workforce-payroll-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field"><label for="workforce-payroll-employee">Employee</label><select id="workforce-payroll-employee" required></select></div>
+                <div class="field"><label for="workforce-payroll-period">Pay period</label><input id="workforce-payroll-period" type="month" required /></div>
+                <div class="field"><label for="workforce-payroll-basic">Basic salary (KES)</label><input id="workforce-payroll-basic" type="number" min="0" step="0.01" required /></div>
+                <div class="field"><label for="workforce-payroll-allowances">Allowances (KES)</label><input id="workforce-payroll-allowances" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-bonus">Bonus (KES)</label><input id="workforce-payroll-bonus" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-deductions">Standard payroll deductions (KES)</label><input id="workforce-payroll-deductions" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-advance">Salary Advance / Early Cashout (KES)</label><input id="workforce-payroll-advance" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-nssf">NSSF deduction (KES)</label><input id="workforce-payroll-nssf" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-shif">SHIF deduction (KES)</label><input id="workforce-payroll-shif" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-housing">Housing levy (KES)</label><input id="workforce-payroll-housing" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-taxable">Taxable pay (KES)</label><input id="workforce-payroll-taxable" type="number" min="0" step="0.01" required /></div>
+                <div class="field"><label for="workforce-payroll-tax-charged">Tax charged (KES)</label><input id="workforce-payroll-tax-charged" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-personal-relief">Personal relief (KES)</label><input id="workforce-payroll-personal-relief" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-other-reliefs">Other reliefs (KES)</label><input id="workforce-payroll-other-reliefs" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-paye">PAYE (KES)</label><input id="workforce-payroll-paye" type="number" min="0" step="0.01" value="0" required /></div>
+              </div>
+              <button class="btn btn-primary" type="submit">Create paystub</button>
+            </form>
+            <div class="workflow-actions">
+              <div class="field"><label for="workforce-p9-employee">Employee P9</label><select id="workforce-p9-employee"></select></div>
+              <button id="workforce-download-employee-p9" class="btn btn-secondary" type="button">Download selected employee P9</button>
+            </div>
+            <div id="workforce-payroll-admin-list" class="workforce-grid"></div>
+            <h2>Publish a terms update or consent agreement</h2>
+            <form id="workforce-notice-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field"><label for="workforce-notice-type">Notice type</label><select id="workforce-notice-type"><option value="TERMS_UPDATE">Terms update</option><option value="CONSENT_AGREEMENT">Consent agreement</option></select></div>
+                <div class="field"><label for="workforce-notice-version">Version</label><input id="workforce-notice-version" maxlength="40" required /></div>
+                <div class="field"><label for="workforce-notice-title">Title</label><input id="workforce-notice-title" maxlength="160" required /></div>
+                <div class="field workflow-field-wide"><label for="workforce-notice-body">Legal text (obtain legal review before publication)</label><textarea id="workforce-notice-body" rows="4" maxlength="5000" required></textarea></div>
+              </div>
+              <button class="btn btn-secondary" type="submit">Publish notice and require acknowledgement</button>
+            </form>
+            <p id="workforce-notice-status" class="tracking-status" role="status" aria-live="polite"></p>
           </section>
         </div>
 
@@ -722,6 +822,17 @@
             <div id="employee-registration-status" class="tracking-status" role="status" aria-live="polite"></div>
             <div id="employee-registration-list" class="workflow-records"></div>
           </section>
+          <section id="transport-enquiries-panel" class="rounded-box" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Public transport enquiries</h2>
+                <p class="muted">Review new requests and record when your team has contacted the customer.</p>
+              </div>
+              <button id="refresh-transport-enquiries" class="btn btn-secondary" type="button">Refresh enquiries</button>
+            </div>
+            <p id="transport-enquiries-status" class="tracking-status" role="status" aria-live="polite"></p>
+            <div id="transport-enquiries-list" class="workflow-records"></div>
+          </section>
           <section id="container-rate-admin" class="rounded-box" hidden>
             <div class="card-header">
               <div>
@@ -746,8 +857,131 @@
           </section>
         </div>
 
+        <div id="view-onboarding" class="tab-view" hidden>
+          <section id="account-onboarding-panel" class="rounded-box" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Onboard a client or employee</h2>
+                <p class="muted">Create an account and email a temporary password. The user must change it on first sign-in.</p>
+              </div>
+            </div>
+            <form id="account-onboarding-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field">
+                  <label for="onboarding-account-type">Account type</label>
+                  <select id="onboarding-account-type" required>
+                    <option value="client">Client</option>
+                    <option value="driver">Driver</option>
+                    <option value="mechanic">Mechanic</option>
+                    <option value="accountant">Accounts</option>
+                    <option value="admin">Admin</option>
+                    <option value="hr">HR</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="onboarding-company">Company or department</label>
+                  <input id="onboarding-company" type="text" maxlength="120" required />
+                </div>
+                <div class="field">
+                  <label for="onboarding-email">Account email</label>
+                  <input id="onboarding-email" type="email" maxlength="120" required />
+                </div>
+                <div id="onboarding-name-field" class="field" hidden>
+                  <label for="onboarding-name">Employee name</label>
+                  <input id="onboarding-name" type="text" maxlength="120" />
+                </div>
+              </div>
+              <button id="account-onboarding-submit" class="btn btn-primary" type="submit">Create account and email credentials</button>
+            </form>
+            <div id="account-onboarding-status" class="tracking-status" role="status" aria-live="polite"></div>
+          </section>
+        </div>
+
         <div id="view-breakdowns" class="tab-view">
-          <section id="driver-switch-panel" class="rounded-box" hidden>
+          <section id="workforce-emergency-panel" class="rounded-box" aria-labelledby="workforce-emergency-title">
+            <h2 id="workforce-emergency-title">Safety & Emergency Actions</h2>
+            <p class="muted">Use this form to record an active accident or roadside breakdown. This remains available during acknowledgement lockout.</p>
+            <form id="workforce-emergency-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field">
+                  <label for="workforce-emergency-type">Emergency type</label>
+                  <select id="workforce-emergency-type" required>
+                    <option value="ACTIVE_ACCIDENT">Active accident</option>
+                    <option value="ROADSIDE_BREAKDOWN">Roadside breakdown</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="workforce-emergency-location">Location</label>
+                  <input id="workforce-emergency-location" type="text" maxlength="200" required />
+                </div>
+                <div id="workforce-emergency-vehicle-field" class="field" hidden>
+                  <label for="workforce-emergency-vehicle">Vehicle registration</label>
+                  <input id="workforce-emergency-vehicle" type="text" maxlength="20" />
+                </div>
+                <div class="field workflow-field-wide">
+                  <label for="workforce-emergency-description">What happened / immediate safety needs</label>
+                  <textarea id="workforce-emergency-description" rows="3" maxlength="2000" required></textarea>
+                </div>
+              </div>
+              <button class="btn btn-primary" type="submit">Submit safety report</button>
+            </form>
+            <p id="workforce-emergency-status" class="tracking-status" role="status" aria-live="polite"></p>
+          </section>
+          <section id="fleet-incident-panel" class="rounded-box breakdown-non-safety" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Report vehicle incident or breakdown</h2>
+                <p class="muted">Record symptoms, the truck reading, findings, immediate action, and any parts used.</p>
+              </div>
+            </div>
+            <form id="fleet-incident-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field"><label for="fleet-incident-vehicle">Truck</label><select id="fleet-incident-vehicle" required></select></div>
+                <div class="field"><label for="fleet-incident-date">Incident date</label><input id="fleet-incident-date" type="date" required /></div>
+                <div class="field"><label for="fleet-incident-severity">Severity</label><select id="fleet-incident-severity" required><option value="LOW">Low</option><option value="MEDIUM">Medium</option><option value="HIGH">High</option><option value="CRITICAL">Critical</option></select></div>
+                <div class="field"><label for="fleet-incident-odometer">Odometer (km)</label><input id="fleet-incident-odometer" type="number" min="0" step="0.1" required /></div>
+                <div class="field workflow-field-wide"><label for="fleet-incident-location">Location</label><input id="fleet-incident-location" maxlength="200" /></div>
+                <div class="field workflow-field-wide"><label for="fleet-incident-symptoms">Symptoms / incident summary</label><textarea id="fleet-incident-symptoms" rows="3" maxlength="1000" required></textarea></div>
+                <div class="field workflow-field-wide"><label for="fleet-incident-findings">Inspection findings</label><textarea id="fleet-incident-findings" rows="3" maxlength="2000"></textarea></div>
+                <div class="field workflow-field-wide"><label for="fleet-incident-action">Immediate action / repair</label><textarea id="fleet-incident-action" rows="3" maxlength="2000"></textarea></div>
+                <div class="field workflow-field-wide"><label for="fleet-incident-parts">Parts used</label><textarea id="fleet-incident-parts" rows="2" maxlength="1000"></textarea></div>
+              </div>
+              <button class="btn btn-primary" type="submit">Save incident report</button>
+            </form>
+            <p id="fleet-incident-status" class="tracking-status" role="status" aria-live="polite"></p>
+          </section>
+          <section id="fleet-health-panel" class="rounded-box breakdown-non-safety" hidden>
+            <div class="card-header"><div><h2>Truck reliability & service history</h2><p class="muted">Breakdown frequency covers the last 12 months. Parts due are calculated from recorded replacement odometers.</p></div></div>
+            <div class="operations-table-wrap"><table class="table-grid"><thead><tr><th>Truck</th><th>Status</th><th>Odometer</th><th>Breakdowns · 12 mo.</th><th>Service due</th></tr></thead><tbody id="fleet-health-rows"></tbody></table></div>
+            <div id="fleet-history-list" class="workflow-records"></div>
+          </section>
+          <section id="fleet-spares-panel" class="rounded-box breakdown-non-safety" hidden>
+            <div class="card-header"><div><h2>Spare-parts stock & assignment</h2><p class="muted">Manage stock, issue parts to a truck, and track each replacement by its odometer reading.</p></div></div>
+            <form id="fleet-spare-create-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field"><label for="fleet-spare-number">Part number</label><input id="fleet-spare-number" maxlength="80" required /></div>
+                <div class="field"><label for="fleet-spare-name">Part name</label><input id="fleet-spare-name" maxlength="120" required /></div>
+                <div class="field"><label for="fleet-spare-interval">Service interval (km)</label><input id="fleet-spare-interval" type="number" min="1" step="1" required /></div>
+                <div class="field"><label for="fleet-spare-stock">Opening stock quantity</label><input id="fleet-spare-stock" type="number" min="0" step="1" value="0" required /></div>
+                <div class="field"><label for="fleet-spare-reorder">Reorder level</label><input id="fleet-spare-reorder" type="number" min="0" step="1" value="0" required /></div>
+              </div>
+              <button class="btn btn-secondary" type="submit">Add spare to inventory</button>
+            </form>
+            <div id="fleet-spare-inventory" class="workflow-records"></div>
+            <form id="fleet-spare-usage-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field"><label for="fleet-spare-vehicle">Truck</label><select id="fleet-spare-vehicle" required></select></div>
+                <div class="field"><label for="fleet-spare-part">Spare part</label><select id="fleet-spare-part" required></select></div>
+                <div class="field"><label for="fleet-spare-quantity">Quantity used</label><input id="fleet-spare-quantity" type="number" min="1" step="1" value="1" required /></div>
+                <div class="field"><label for="fleet-spare-odometer">Replacement odometer (km)</label><input id="fleet-spare-odometer" type="number" min="0" step="0.1" required /></div>
+                <div class="field"><label for="fleet-spare-technician">Installed by</label><input id="fleet-spare-technician" maxlength="120" required /></div>
+                <div class="field"><label for="fleet-spare-notes">Notes</label><input id="fleet-spare-notes" maxlength="500" /></div>
+              </div>
+              <button class="btn btn-primary" type="submit">Assign / record part usage</button>
+            </form>
+            <p id="fleet-spare-status" class="tracking-status" role="status" aria-live="polite"></p>
+          </section>
+          <section id="driver-switch-panel" class="rounded-box breakdown-non-safety" hidden>
             <div class="card-header">
               <div>
                 <h2>Load transfer</h2>
@@ -807,7 +1041,7 @@
               <div id="driver-switch-history" class="workflow-records" aria-live="polite"></div>
             </div>
           </section>
-          <section class="rounded-box">
+          <section class="rounded-box breakdown-non-safety">
             <div class="card-header">
               <h3>Breakdown Control Queue</h3>
             </div>
@@ -846,6 +1080,52 @@
               </div>
             </div>
             <div id="goods-delivery-details" class="workflow-records" aria-live="polite"></div>
+          </section>
+          <section id="client-pod-signature-panel" class="rounded-box" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Confirm and sign delivery</h2>
+                <p class="muted">Review the delivered cargo and sign on this device. A signed proof-of-delivery PDF will be available to download.</p>
+              </div>
+            </div>
+            <p id="client-pod-shipment-summary" class="muted"></p>
+            <form id="client-pod-signature-form" class="workflow-form">
+              <div class="field">
+                <label for="client-pod-signer-name">Receiving customer name</label>
+                <input id="client-pod-signer-name" type="text" maxlength="120" autocomplete="name" required />
+              </div>
+              <div class="field">
+                <label for="client-pod-signature-canvas">Signature</label>
+                <canvas id="client-pod-signature-canvas" width="900" height="240" aria-label="Draw your signature"></canvas>
+              </div>
+              <div class="workflow-actions">
+                <button id="client-pod-clear-signature" class="btn btn-secondary" type="button">Clear signature</button>
+                <button id="client-pod-submit-signature" class="btn btn-primary" type="submit">Sign and complete delivery</button>
+              </div>
+            </form>
+            <button id="client-pod-download" class="btn btn-secondary" type="button" hidden>Download signed proof of delivery</button>
+            <p id="client-pod-status" class="tracking-status" role="status" aria-live="polite"></p>
+            <section id="client-rating-panel" class="rounded-box" hidden>
+              <h3>Rate your delivery</h3>
+              <form id="client-rating-form" class="workflow-form">
+                <div class="field">
+                  <label for="client-rating-stars">Customer rating</label>
+                  <select id="client-rating-stars" required>
+                    <option value="5">5 stars · Excellent</option>
+                    <option value="4">4 stars · Good</option>
+                    <option value="3">3 stars · Satisfactory</option>
+                    <option value="2">2 stars · Needs improvement</option>
+                    <option value="1">1 star · Poor</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="client-rating-feedback">Feedback (optional)</label>
+                  <textarea id="client-rating-feedback" rows="3" maxlength="1000"></textarea>
+                </div>
+                <button class="btn btn-primary" type="submit">Submit delivery rating</button>
+              </form>
+              <p id="client-rating-status" class="tracking-status" role="status" aria-live="polite"></p>
+            </section>
           </section>
           <section id="goods-document-upload-panel" class="rounded-box" hidden>
             <div class="card-header">
@@ -947,6 +1227,125 @@
         </div>
 
         <div id="view-booking" class="tab-view">
+          <section id="shipment-request-panel" class="rounded-box client-shipment-request" hidden>
+            <div class="card-header">
+              <div>
+                <p class="profile-eyebrow">Step 1 · Request a truck</p>
+                <h2>Shipment details</h2>
+                <p class="muted">Tell us about your cargo, pickup, schedule, and the customer receiving your goods.</p>
+                <p class="quote-vat-disclaimer">Rates are estimates based on the selected hubs and truck class; the full delivery address may affect the final dispatch price. VAT is estimated at 16%.</p>
+              </div>
+            </div>
+            <form id="shipment-request-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field">
+                  <label for="request-origin">Pickup hub</label>
+                  <select id="request-origin" required>
+                    <option>Athi River Industrial Zone</option>
+                    <option>Nairobi Inland Container Depot (ICD)</option>
+                    <option>Mombasa Port Terminal</option>
+                    <option>Nakuru Freight Bypass</option>
+                    <option>Eldoret Logistics Hub</option>
+                    <option>Kisumu Central Warehouse</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="request-destination">Delivery hub</label>
+                  <select id="request-destination" required>
+                    <option>Mombasa Port Terminal</option>
+                    <option>Kisumu Central Warehouse</option>
+                    <option>Nairobi Inland Container Depot (ICD)</option>
+                    <option>Athi River Industrial Zone</option>
+                    <option>Nakuru Freight Bypass</option>
+                    <option>Eldoret Logistics Hub</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="request-truck-type">Truck type</label>
+                  <select id="request-truck-type" required>
+                    <option value="3_TON">3-Ton Light Canter (max 3 t)</option>
+                    <option value="10_TON">10-Ton Medium Rigid (max 10 t)</option>
+                    <option value="15_TON" selected>15-Ton Heavy Tipper / Flatbed (max 15 t)</option>
+                    <option value="30_TON">30-Ton Multi-Axle Trailer (max 30 t)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="request-cargo">Cargo description</label>
+                  <input id="request-cargo" type="text" maxlength="160" required placeholder="e.g. packaged food products" />
+                </div>
+                <div class="field">
+                  <label for="request-tonnage">Cargo weight (tonnes)</label>
+                  <input id="request-tonnage" type="number" min="0.1" max="30" step="0.1" required />
+                </div>
+                <div class="field">
+                  <label for="request-pickup-at">Pickup date and time</label>
+                  <input id="request-pickup-at" type="datetime-local" required />
+                </div>
+                <div class="field">
+                  <label for="request-delivery-due-at">Required delivery deadline</label>
+                  <input id="request-delivery-due-at" type="datetime-local" required />
+                </div>
+                <div class="field">
+                  <label for="request-pickup-address">Pickup address</label>
+                  <input id="request-pickup-address" type="text" maxlength="300" required />
+                </div>
+                <div class="field">
+                  <label for="request-customer-name">End customer / receiver</label>
+                  <input id="request-customer-name" type="text" maxlength="200" required />
+                </div>
+                <div class="field">
+                  <label for="request-customer-phone">Receiver phone</label>
+                  <input id="request-customer-phone" type="tel" maxlength="40" required />
+                </div>
+                <div class="field workflow-field-wide">
+                  <label for="request-customer-address">End customer delivery address</label>
+                  <input id="request-customer-address" type="text" maxlength="300" required />
+                </div>
+              </div>
+              <button id="request-quote-button" class="btn btn-secondary" type="button">Calculate truck rate</button>
+              <div id="request-quote-summary" class="tracking-status" role="status" aria-live="polite" hidden></div>
+              <label id="request-quote-acceptance" class="field" hidden>
+                <input id="request-quote-accepted" type="checkbox" />
+                I accept this estimated rate, including the VAT shown above.
+              </label>
+              <button id="submit-shipment-request" class="btn btn-primary" type="submit" hidden>Request this truck</button>
+            </form>
+            <div id="shipment-request-status" class="tracking-status" role="status" aria-live="polite"></div>
+          </section>
+          <section id="destination-change-panel" class="rounded-box client-shipment-request" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Change a delivery destination</h2>
+                <p class="muted">We will show the revised rate. The route and rate will not change unless you accept.</p>
+              </div>
+            </div>
+            <form id="destination-change-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field">
+                  <label for="destination-change-shipment">Shipment</label>
+                  <select id="destination-change-shipment" required></select>
+                </div>
+                <div class="field">
+                  <label for="destination-change-hub">New delivery hub</label>
+                  <select id="destination-change-hub" required>
+                    <option>Mombasa Port Terminal</option>
+                    <option>Kisumu Central Warehouse</option>
+                    <option>Nairobi Inland Container Depot (ICD)</option>
+                    <option>Athi River Industrial Zone</option>
+                    <option>Nakuru Freight Bypass</option>
+                    <option>Eldoret Logistics Hub</option>
+                  </select>
+                </div>
+                <div class="field workflow-field-wide">
+                  <label for="destination-change-address">New end customer delivery address</label>
+                  <input id="destination-change-address" type="text" maxlength="300" required />
+                </div>
+              </div>
+              <button id="destination-change-submit" class="btn btn-secondary" type="submit">Calculate revised rate</button>
+            </form>
+            <div id="destination-change-status" class="tracking-status" role="status" aria-live="polite"></div>
+            <div id="destination-change-decision" class="workflow-records" hidden></div>
+          </section>
           <section class="rounded-box" style="max-width: 720px; margin: 0 auto 24px;">
             <div class="card-header">
               <h3>Freight Quote Calculator</h3>
@@ -1088,10 +1487,18 @@
               </article>
             </div>
             <p id="finance-status" class="muted" role="status" aria-live="polite">Open Finance to load delivery accounts.</p>
+            <div id="finance-bulk-controls" class="workflow-actions finance-update-column" hidden>
+              <label class="finance-mark-paid">
+                <input id="finance-select-all" type="checkbox" />
+                Select all eligible deliveries
+              </label>
+              <button id="finance-bulk-mark-paid" class="btn btn-primary" type="button">Mark selected fully paid</button>
+            </div>
             <div class="operations-table-wrap">
               <table class="table-grid finance-table">
                 <thead>
                   <tr>
+                    <th class="finance-update-column">Select</th>
                     <th>Delivery</th>
                     <th>Company</th>
                     <th>Destination</th>
@@ -1141,6 +1548,24 @@
                 </div>
                 <button class="btn btn-primary" type="submit">Save shipment assignment</button>
               </form>
+              <div class="rounded-box">
+                <h3>Destination rate-sheet import</h3>
+                <p class="muted">Upload an .xlsx or PDF with columns: origin, destination, truck_type, flat_rate_kes. PDF tables should use one pipe-separated rate per line. Rates are previewed for review before they affect quotes; the flat rate is before VAT.</p>
+                <form id="destination-rates-upload-form" class="workflow-form">
+                  <div class="field"><label for="destination-rates-file">Excel or PDF rate sheet</label><input id="destination-rates-file" type="file" accept=".xlsx,.pdf,application/pdf" required /></div>
+                  <button id="destination-rates-preview-button" class="btn btn-secondary" type="submit">Preview extracted rates</button>
+                </form>
+                <p id="destination-rates-status" class="tracking-status" role="status" aria-live="polite"></p>
+                <div class="operations-table-wrap">
+                  <table class="table-grid">
+                    <thead><tr><th>Row</th><th>Origin</th><th>Destination</th><th>Truck</th><th>Rate before VAT (KES)</th><th>Review</th></tr></thead>
+                    <tbody id="destination-rates-preview"></tbody>
+                  </table>
+                </div>
+                <button id="destination-rates-import-button" class="btn btn-primary" type="button" hidden>Confirm and apply valid rates</button>
+                <h4>Currently applied destination rates</h4>
+                <div id="destination-rates-current" class="workflow-records"></div>
+              </div>
               <form id="account-role-form" class="workflow-form tracking-role-form">
                 <div class="workflow-grid">
                   <div class="field">
@@ -1168,6 +1593,15 @@
               </form>
               <div id="tracking-admin-status" class="tracking-status" role="status" aria-live="polite"></div>
             </section>
+            <section id="client-in-transit-panel" class="rounded-box" hidden aria-labelledby="client-in-transit-heading">
+              <div class="card-header">
+                <div>
+                  <h2 id="client-in-transit-heading">Goods in transit</h2>
+                  <p class="muted">Current loads assigned to your client account. Delivered shipments leave this list automatically.</p>
+                </div>
+              </div>
+              <div id="client-in-transit-list" class="shipment-accessible-list" aria-live="polite"></div>
+            </section>
             <div id="shipment-accessible-list" class="shipment-accessible-list" aria-live="polite"></div>
             <form id="shipment-track-form" style="display:flex; align-items:end; gap:12px; flex-wrap:wrap; margin:16px 0;">
               <div class="field" style="flex:1 1 240px; margin:0;">
@@ -1191,56 +1625,44 @@
     <script src="js/script.js"></script>
     <script src="js/driverPortal.js"></script>
     <script src="js/shipmentLookup.js"></script>
+    <script src="js/shipmentRequest.js"></script>
     <script src="js/employeePortal.js"></script>
+    <script src="js/transportEnquiry.js"></script>
+    <script src="js/workforce.js"></script>
+    <script src="js/fleetMaintenance.js"></script>
     <script src="js/financePortal.js"></script>
     <script src="js/clientCommunications.js"></script>
+    <script src="js/anonymousReports.js"></script>
     <script>
       const loginForm = document.getElementById('login-form');
       const publicHome = document.getElementById('public-home');
       const loginScreen = document.getElementById('login-screen');
-      const signupScreen = document.getElementById('signup-screen');
-      const employeeSignupScreen = document.getElementById('employee-signup-screen');
-      const signupForm = document.getElementById('signup-form');
-      const employeeSignupForm = document.getElementById('employee-signup-form');
+      const passwordChangeScreen = document.getElementById('password-change-screen');
+      const passwordChangeForm = document.getElementById('password-change-form');
       const appShell = document.getElementById('app-shell');
       const loginError = document.getElementById('login-error');
       const loginSubmit = document.getElementById('login-submit');
-      const signupMessage = document.getElementById('signup-message');
-      const signupSubmit = document.getElementById('signup-submit');
-      const employeeSignupMessage = document.getElementById('employee-signup-message');
-      const employeeSignupSubmit = document.getElementById('employee-signup-submit');
       const rememberMeCheckbox = document.getElementById('remember-me');
       const loginRole = document.getElementById('login-role');
 
       function showPublicHome() {
         publicHome.style.display = 'block';
         loginScreen.style.display = 'none';
-        signupScreen.style.display = 'none';
-        employeeSignupScreen.style.display = 'none';
+        passwordChangeScreen.style.display = 'none';
         appShell.style.display = 'none';
       }
 
       function showLogin() {
         publicHome.style.display = 'none';
         loginScreen.style.display = 'flex';
-        signupScreen.style.display = 'none';
-        employeeSignupScreen.style.display = 'none';
+        passwordChangeScreen.style.display = 'none';
         appShell.style.display = 'none';
       }
 
-      function showSignup() {
+      function showPasswordChange() {
         publicHome.style.display = 'none';
         loginScreen.style.display = 'none';
-        signupScreen.style.display = 'flex';
-        employeeSignupScreen.style.display = 'none';
-        appShell.style.display = 'none';
-      }
-
-      function showEmployeeSignup() {
-        publicHome.style.display = 'none';
-        loginScreen.style.display = 'none';
-        signupScreen.style.display = 'none';
-        employeeSignupScreen.style.display = 'flex';
+        passwordChangeScreen.style.display = 'flex';
         appShell.style.display = 'none';
       }
 
@@ -1250,13 +1672,6 @@
       document.querySelectorAll('[data-open-home]').forEach((button) => {
         button.addEventListener('click', showPublicHome);
       });
-      document.querySelectorAll('[data-open-signup]').forEach((button) => {
-        button.addEventListener('click', showSignup);
-      });
-      document.querySelectorAll('[data-open-employee-signup]').forEach((button) => {
-        button.addEventListener('click', showEmployeeSignup);
-      });
-
       const COOKIE_NAME = 'difan_auth_session';
       const PREF_COOKIE_NAME = 'difan_auth_prefs';
 
@@ -1326,7 +1741,7 @@
             role: user.role || 'client',
             station: 'Athi River HQ',
             company_name: user.company_name || '',
-            email: user.email || '',
+            email: user.notification_email || user.email || '',
             driver_name: user.driver_name || ''
           };
         }
@@ -1347,7 +1762,13 @@
         if (employeeNavigation) employeeNavigation.hidden = user.role === 'client';
         const employeeView = document.getElementById('view-employees');
         if (employeeView) employeeView.hidden = user.role === 'client';
-        const financeAccess = ['admin', 'hr', 'accountant', 'client'].includes(user.role);
+        const workforceNavigation = document.getElementById('workforce-navigation');
+        const workforceView = document.getElementById('view-workforce');
+        const employeeRoles = ['driver', 'mechanic', 'accountant', 'admin', 'hr', 'boss'];
+        if (workforceNavigation) workforceNavigation.hidden = !employeeRoles.includes(user.role);
+        if (workforceView) workforceView.hidden = !employeeRoles.includes(user.role);
+        window.DifanApp.state.workforceLockout = employeeRoles.includes(user.role);
+        const financeAccess = ['admin', 'hr', 'boss', 'accountant', 'client'].includes(user.role);
         const financeNavigation = document.getElementById('finance-navigation');
         if (financeNavigation) financeNavigation.hidden = !financeAccess;
         const financeView = document.getElementById('view-finance');
@@ -1360,21 +1781,22 @@
         const staffMessagesView = document.getElementById('staff-messages-view');
         const reportsNavigation = document.getElementById('reports-navigation');
         const reportsView = document.getElementById('view-reports');
-        const canCommunicateWithClients = ['admin', 'hr', 'accountant'].includes(user.role);
+        const canCommunicateWithClients = ['admin', 'hr', 'boss', 'accountant'].includes(user.role);
         if (communitySection) communitySection.hidden = !financeAccess;
         if (clientCommunity) clientCommunity.hidden = user.role !== 'client';
         if (staffCommunity) staffCommunity.hidden = !canCommunicateWithClients;
-        if (messagesNavigation) messagesNavigation.hidden = !(['client', 'admin', 'hr', 'accountant'].includes(user.role));
+        if (messagesNavigation) messagesNavigation.hidden = !(['client', 'admin', 'hr', 'boss', 'accountant'].includes(user.role));
         if (clientMessagesView) clientMessagesView.hidden = user.role !== 'client';
         if (staffMessagesView) staffMessagesView.hidden = !canCommunicateWithClients;
-        if (reportsNavigation) reportsNavigation.hidden = user.role !== 'boss';
-        if (reportsView) reportsView.hidden = user.role !== 'boss';
+        const canReviewAnonymousReports = user.role === 'boss';
+        if (reportsNavigation) reportsNavigation.hidden = !canReviewAnonymousReports;
+        if (reportsView) reportsView.hidden = !canReviewAnonymousReports;
         const employeeName = document.getElementById('employee-section-name');
         if (employeeName) employeeName.textContent = user.display_name || user.driver_name || user.email || '';
         const employeeRole = document.getElementById('employee-section-role');
         if (employeeRole) employeeRole.textContent = user.role || '';
         const employeeEmail = document.getElementById('employee-section-email');
-        if (employeeEmail) employeeEmail.textContent = user.email || '';
+        if (employeeEmail) employeeEmail.textContent = user.notification_email || user.email || '';
         const employeeStatus = document.getElementById('employee-section-status');
         if (employeeStatus) employeeStatus.textContent = user.account_status || 'active';
         window.dispatchEvent(new Event('difan:session-ready'));
@@ -1427,9 +1849,14 @@
             userBadge.textContent = `${session.user.display_name || session.user.driver_name || session.user.company_name || session.user.email} (${role === 'client' ? 'CLIENT PORTAL' : role.toUpperCase()})`;
           }
 
+          if (session.user.must_change_password) {
+            localStorage.setItem('jwt_token', session.token);
+            localStorage.setItem('user_data', JSON.stringify(session.user));
+            showPasswordChange();
+            return true;
+          }
           loginScreen.style.display = 'none';
-          signupScreen.style.display = 'none';
-          employeeSignupScreen.style.display = 'none';
+          passwordChangeScreen.style.display = 'none';
           publicHome.style.display = 'none';
           appShell.style.display = 'block';
           refreshSessionUser(session);
@@ -1470,6 +1897,11 @@
           localStorage.setItem('user_data', JSON.stringify(user));
           savePreferences(email, rememberMe);
 
+          if (user.must_change_password) {
+            showPasswordChange();
+            return;
+          }
+
           applyAuthenticatedUser(user, token);
 
           const userBadge = document.getElementById('current-user-badge');
@@ -1488,78 +1920,48 @@
         }
       }
 
-      async function onSignupSubmit(event) {
+      async function onPasswordChangeSubmit(event) {
         event.preventDefault();
-        signupMessage.textContent = '';
-        signupMessage.style.color = '';
-        signupSubmit.disabled = true;
-        const companyName = document.getElementById('signup-company').value.trim();
-        const email = document.getElementById('signup-email').value.trim();
-        const password = document.getElementById('signup-password').value;
-        const confirmPassword = document.getElementById('signup-password-confirm').value;
+        const message = document.getElementById('password-change-message');
+        const submit = document.getElementById('password-change-submit');
+        message.textContent = '';
+        submit.disabled = true;
+        const password = document.getElementById('new-password').value;
+        const confirmPassword = document.getElementById('new-password-confirm').value;
         if (password !== confirmPassword) {
-          signupMessage.textContent = 'The passwords do not match.';
-          signupSubmit.disabled = false;
+          message.textContent = 'The passwords do not match.';
+          submit.disabled = false;
           return;
         }
         try {
-          const response = await fetch('http://localhost:5000/api/auth/register', {
+          const response = await fetch('http://localhost:5000/api/auth/change-password', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ company_name: companyName, email, password })
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${localStorage.getItem('jwt_token') || ''}`,
+            },
+            body: JSON.stringify({ password })
           });
           const data = await response.json();
-          if (!response.ok) {
-            throw new Error(data.message || 'Account registration failed.');
-          }
-          document.getElementById('login-email').value = email;
-          loginRole.value = 'client';
-          loginError.textContent = data.message || 'Account created. Sign in to continue.';
-          loginError.style.color = '#2a5a3b';
-          showLogin();
+          if (!response.ok) throw new Error(data.message || 'Password change failed.');
+          const user = data.user;
+          const token = data.token;
+          localStorage.setItem('jwt_token', token);
+          localStorage.setItem('user_data', JSON.stringify(user));
+          setCookie(COOKIE_NAME, JSON.stringify({ token, user }), 0);
+          applyAuthenticatedUser(user, token);
+          passwordChangeForm.reset();
+          passwordChangeScreen.style.display = 'none';
+          appShell.style.display = 'block';
         } catch (error) {
-          signupMessage.textContent = error.message || 'Unable to create the account.';
+          message.textContent = error.message || 'Unable to change your password.';
         } finally {
-          signupSubmit.disabled = false;
-        }
-      }
-
-      async function onEmployeeSignupSubmit(event) {
-        event.preventDefault();
-        employeeSignupMessage.textContent = '';
-        employeeSignupMessage.style.color = '';
-        employeeSignupSubmit.disabled = true;
-        const displayName = document.getElementById('employee-signup-name').value.trim();
-        const role = document.getElementById('employee-signup-role').value;
-        const email = document.getElementById('employee-signup-email').value.trim();
-        const password = document.getElementById('employee-signup-password').value;
-        const confirmPassword = document.getElementById('employee-signup-password-confirm').value;
-        if (password !== confirmPassword) {
-          employeeSignupMessage.textContent = 'The passwords do not match.';
-          employeeSignupSubmit.disabled = false;
-          return;
-        }
-        try {
-          const response = await fetch('http://localhost:5000/api/auth/register/employee', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ display_name: displayName, role, email, password })
-          });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.message || 'Employee registration failed.');
-          employeeSignupMessage.textContent = data.message;
-          employeeSignupMessage.style.color = '#2a5a3b';
-          employeeSignupForm.reset();
-        } catch (error) {
-          employeeSignupMessage.textContent = error.message || 'Unable to submit your registration.';
-        } finally {
-          employeeSignupSubmit.disabled = false;
+          submit.disabled = false;
         }
       }
 
       loginForm.addEventListener('submit', onLoginSubmit);
-      signupForm.addEventListener('submit', onSignupSubmit);
-      employeeSignupForm.addEventListener('submit', onEmployeeSignupSubmit);
+      passwordChangeForm.addEventListener('submit', onPasswordChangeSubmit);
       document.getElementById('logout-button').addEventListener('click', () => {
         eraseCookie(COOKIE_NAME);
         localStorage.removeItem('jwt_token');

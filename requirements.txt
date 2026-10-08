@@ -12,3 +12,4 @@ uvicorn
 Pillow
 PyMuPDF
 rapidocr-onnxruntime
+boto3

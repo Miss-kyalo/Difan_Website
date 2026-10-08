@@ -104,7 +104,17 @@ document.addEventListener('DOMContentLoaded', () => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const targetTab = link.getAttribute('data-target-tab') || link.getAttribute('href').replace('#', '');
-                
+                if (
+                    window.DifanApp.state.workforceLockout
+                    && !['workforce', 'breakdowns'].includes(targetTab)
+                ) {
+                    window.DifanApp.showToast(
+                        'Acknowledge your pending paystub, terms, or consent notice before continuing.',
+                        'warning',
+                    );
+                    return;
+                }
+
                 navLinks.forEach(nl => nl.classList.remove('active'));
                 link.classList.add('active');
 
@@ -117,6 +127,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
                 window.scrollTo({ top: 0, behavior: 'smooth' });
+                const sectionId = link.getAttribute('data-target-section');
+                if (sectionId) {
+                    requestAnimationFrame(() => {
+                        document.getElementById(sectionId)?.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start',
+                        });
+                    });
+                }
             });
         });
     }

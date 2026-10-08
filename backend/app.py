@@ -5,11 +5,13 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 from backend.models.payroll import db
-from backend.routes.auth import auth_bp, bcrypt, jwt
+from backend.routes.auth import auth_bp, bcrypt, ensure_main_accounts, jwt
 from backend.routes.hr import hr_bp
 from backend.routes.portal import portal_bp
 from backend.routes.shipments import shipments_bp, seed_demo_shipment
+from backend.routes.fleet import fleet_bp
 from backend.routes.telematics import telematics_bp
+from backend.routes.workforce import install_workforce_lockout, workforce_bp
 
 
 def create_app(test_config=None):
@@ -26,6 +28,15 @@ def create_app(test_config=None):
 
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or os.getenv('FLASK_SECRET_KEY') or secrets.token_urlsafe(48)
     app.config['JWT_SECRET_KEY'] = app.config['SECRET_KEY']
+    app.config['SENDGRID_API_KEY'] = os.getenv('SENDGRID_API_KEY')
+    app.config['MAIL_FROM_EMAIL'] = os.getenv('MAIL_FROM_EMAIL')
+    app.config['MAIN_ACCOUNT_EMAIL'] = os.getenv(
+        'MAIN_ACCOUNT_EMAIL', 'info@difan-logistics.com'
+    )
+    app.config['PAYROLL_DOCUMENTS_BUCKET'] = os.getenv('PAYROLL_DOCUMENTS_BUCKET')
+    app.config['PAYROLL_DOCUMENT_KMS_KEY_ID'] = os.getenv('PAYROLL_DOCUMENT_KMS_KEY_ID')
+    app.config['PAYROLL_DOCUMENT_RETENTION_DAYS'] = os.getenv('PAYROLL_DOCUMENT_RETENTION_DAYS')
+    app.config['AWS_REGION'] = os.getenv('AWS_REGION')
 
     db_path = os.path.join(app.instance_path, 'database.db')
     os.makedirs(app.instance_path, exist_ok=True)
@@ -47,6 +58,9 @@ def create_app(test_config=None):
     app.register_blueprint(portal_bp)
     app.register_blueprint(shipments_bp)
     app.register_blueprint(telematics_bp)
+    app.register_blueprint(fleet_bp)
+    app.register_blueprint(workforce_bp)
+    install_workforce_lockout(app)
 
     with app.app_context():
         db.create_all()
@@ -76,6 +90,40 @@ def create_app(test_config=None):
                 connection.execute(text(
                     "ALTER TABLE user_accounts ADD COLUMN approved_at DATETIME"
                 ))
+            if 'username' not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE user_accounts ADD COLUMN username VARCHAR(80)"
+                ))
+            if 'must_change_password' not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE user_accounts ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0"
+                ))
+            if 'notification_email' not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE user_accounts ADD COLUMN notification_email VARCHAR(120)"
+                ))
+            for column, definition in (
+                ('driver_code', 'VARCHAR(20)'),
+                ('employment_status', "VARCHAR(24) NOT NULL DEFAULT 'ACTIVE'"),
+                ('leave_type', 'VARCHAR(16)'),
+                ('employment_status_note', 'VARCHAR(500)'),
+                ('employment_status_updated_at', 'DATETIME'),
+                ('employment_status_updated_by_id', 'INTEGER REFERENCES user_accounts(id)'),
+                ('leaderboard_opt_in', 'BOOLEAN NOT NULL DEFAULT 0'),
+                ('leaderboard_handle', 'VARCHAR(40)'),
+            ):
+                if column not in user_columns:
+                    connection.execute(text(
+                        f'ALTER TABLE user_accounts ADD COLUMN {column} {definition}'
+                    ))
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_user_accounts_driver_code "
+                "ON user_accounts (driver_code)"
+            ))
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_user_accounts_username "
+                "ON user_accounts (username)"
+            ))
             connection.execute(text(
                 "UPDATE user_accounts SET role = 'admin' "
                 "WHERE lower(email) = 'admin@difanlogistics.com'"
@@ -87,7 +135,80 @@ def create_app(test_config=None):
                 connection.execute(text("ALTER TABLE shipments ADD COLUMN departed_at DATETIME"))
             if 'arrived_at' not in shipment_columns:
                 connection.execute(text("ALTER TABLE shipments ADD COLUMN arrived_at DATETIME"))
+            if 'delivery_due_at' not in shipment_columns:
+                connection.execute(text("ALTER TABLE shipments ADD COLUMN delivery_due_at DATETIME"))
+            for column, definition in (
+                ('truck_type', 'VARCHAR(20)'),
+                ('pickup_address', 'VARCHAR(300)'),
+                ('pickup_at', 'DATETIME'),
+                ('end_customer_name', 'VARCHAR(200)'),
+                ('end_customer_address', 'VARCHAR(300)'),
+                ('end_customer_phone', 'VARCHAR(40)'),
+                ('quoted_amount_kes', 'FLOAT'),
+                ('destination_change_request', 'TEXT'),
+                ('client_user_id', 'INTEGER REFERENCES user_accounts(id)'),
+            ):
+                if column not in shipment_columns:
+                    connection.execute(text(
+                        f'ALTER TABLE shipments ADD COLUMN {column} {definition}'
+                    ))
+            connection.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_shipments_client_user_id ON shipments (client_user_id)"
+            ))
+            spare_columns = {
+                column['name'] for column in inspect(db.engine).get_columns('fleet_spare_parts')
+            } if inspect(db.engine).has_table('fleet_spare_parts') else set()
+            for column, definition in (
+                ('stock_quantity', 'INTEGER NOT NULL DEFAULT 0'),
+                ('reorder_level', 'INTEGER NOT NULL DEFAULT 0'),
+            ):
+                if column not in spare_columns:
+                    connection.execute(text(
+                        f'ALTER TABLE fleet_spare_parts ADD COLUMN {column} {definition}'
+                    ))
+            breakdown_columns = {
+                column['name'] for column in inspect(db.engine).get_columns('fleet_breakdowns')
+            } if inspect(db.engine).has_table('fleet_breakdowns') else set()
+            for column, definition in (
+                ('incident_date', 'VARCHAR(10)'),
+                ('symptoms', 'VARCHAR(1000)'),
+                ('findings', 'VARCHAR(2000)'),
+                ('action_taken', 'VARCHAR(2000)'),
+                ('parts_used', 'VARCHAR(1000)'),
+            ):
+                if column not in breakdown_columns:
+                    connection.execute(text(
+                        f'ALTER TABLE fleet_breakdowns ADD COLUMN {column} {definition}'
+                    ))
+            payroll_columns = {
+                column['name'] for column in inspect(db.engine).get_columns('payroll_slips')
+            } if inspect(db.engine).has_table('payroll_slips') else set()
+            for column, definition in (
+                ('salary_advance', 'FLOAT NOT NULL DEFAULT 0'),
+                ('advance_signed_at', 'DATETIME'),
+                ('signed_pdf_object_key', 'VARCHAR(512)'),
+                ('signed_pdf_version_id', 'VARCHAR(256)'),
+                ('signed_pdf_sha256', 'VARCHAR(64)'),
+                ('signature_device_id', 'VARCHAR(120)'),
+                ('signature_ip_address', 'VARCHAR(64)'),
+                ('signature_latitude', 'FLOAT'),
+                ('signature_longitude', 'FLOAT'),
+                ('nssf_deduction', 'FLOAT'),
+                ('shif_deduction', 'FLOAT'),
+                ('housing_levy_deduction', 'FLOAT'),
+                ('taxable_pay', 'FLOAT'),
+                ('tax_charged', 'FLOAT'),
+                ('personal_relief', 'FLOAT'),
+                ('other_reliefs', 'FLOAT'),
+                ('paye_tax', 'FLOAT'),
+            ):
+                if column not in payroll_columns:
+                    connection.execute(text(
+                        f'ALTER TABLE payroll_slips ADD COLUMN {column} {definition}'
+                    ))
         seed_demo_shipment()
+        if not app.config.get('TESTING'):
+            ensure_main_accounts()
 
     @app.errorhandler(413)
     def file_too_large(error):

@@ -3,6 +3,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const financeNavigation = document.getElementById('finance-navigation');
   const deliveryList = document.getElementById('finance-delivery-list');
   const statusMessage = document.getElementById('finance-status');
+  const bulkControls = document.getElementById('finance-bulk-controls');
+  const selectAll = document.getElementById('finance-select-all');
+  const bulkMarkPaid = document.getElementById('finance-bulk-mark-paid');
   if (!financeView || !financeNavigation || !deliveryList || !statusMessage) return;
 
   const summaryFields = {
@@ -121,6 +124,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderDelivery(delivery, canUpdate) {
     const row = document.createElement('tr');
+    if (canUpdate) {
+      const selectCell = document.createElement('td');
+      selectCell.className = 'finance-update-column';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.financeSelect = '';
+      checkbox.value = delivery.tracking_number;
+      checkbox.setAttribute('aria-label', `Select ${delivery.tracking_number} for bulk payment`);
+      checkbox.disabled = delivery.invoice_amount_kes === null || delivery.payment_status === 'paid';
+      checkbox.addEventListener('change', updateBulkSelection);
+      selectCell.appendChild(checkbox);
+      row.appendChild(selectCell);
+    }
     row.append(
       createCell(delivery.tracking_number),
       createCell(delivery.company_name || 'Unassigned'),
@@ -136,20 +152,65 @@ document.addEventListener('DOMContentLoaded', () => {
     deliveryList.appendChild(row);
   }
 
+  function updateBulkSelection() {
+    if (!selectAll || !bulkMarkPaid) return;
+    const checkboxes = Array.from(deliveryList.querySelectorAll('[data-finance-select]'));
+    const eligible = checkboxes.filter((checkbox) => !checkbox.disabled);
+    const selected = eligible.filter((checkbox) => checkbox.checked);
+    selectAll.checked = eligible.length > 0 && selected.length === eligible.length;
+    selectAll.indeterminate = selected.length > 0 && selected.length < eligible.length;
+    bulkMarkPaid.disabled = selected.length === 0;
+  }
+
+  selectAll?.addEventListener('change', () => {
+    deliveryList.querySelectorAll('[data-finance-select]').forEach((checkbox) => {
+      if (!checkbox.disabled) checkbox.checked = selectAll.checked;
+    });
+    updateBulkSelection();
+  });
+
+  bulkMarkPaid?.addEventListener('click', async () => {
+    const trackingNumbers = Array.from(
+      deliveryList.querySelectorAll('[data-finance-select]:checked'),
+      (checkbox) => checkbox.value,
+    );
+    if (!trackingNumbers.length) return;
+    bulkMarkPaid.disabled = true;
+    statusMessage.textContent = `Marking ${trackingNumbers.length} delivery payment(s) fully paid...`;
+    try {
+      const result = await apiRequest('/api/portal/delivery-finance/bulk-mark-paid', {
+        method: 'POST',
+        body: JSON.stringify({ tracking_numbers: trackingNumbers }),
+      });
+      selectAll.checked = false;
+      await loadFinance();
+      statusMessage.textContent = result.message;
+    } catch (error) {
+      statusMessage.textContent = error.message || 'Unable to apply bulk payments.';
+      bulkMarkPaid.disabled = false;
+    }
+  });
+
   async function loadFinance() {
     deliveryList.replaceChildren();
     statusMessage.textContent = 'Loading delivery finance...';
+    if (selectAll) {
+      selectAll.checked = false;
+      selectAll.indeterminate = false;
+    }
     try {
       const data = await apiRequest('/api/portal/delivery-finance');
       const currentUser = window.DifanApp?.state?.currentUser;
       const canUpdate = Boolean(data.can_update);
       financeView.classList.toggle('finance-read-only', !canUpdate);
+      if (bulkControls) bulkControls.hidden = !canUpdate;
       if (summaryFields.paidCount) summaryFields.paidCount.textContent = String(data.summary.paid_count);
       if (summaryFields.pendingCount) summaryFields.pendingCount.textContent = String(data.summary.pending_count);
       if (summaryFields.totalPaid) summaryFields.totalPaid.textContent = currency(data.summary.paid_amount_kes);
       if (summaryFields.totalBalance) summaryFields.totalBalance.textContent = currency(data.summary.balance_kes);
 
       for (const delivery of data.deliveries) renderDelivery(delivery, canUpdate);
+      updateBulkSelection();
       if (!data.deliveries.length) {
         statusMessage.textContent = currentUser?.role === 'client'
           ? 'No deliveries are linked to your company account yet.'

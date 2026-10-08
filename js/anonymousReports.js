@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getToken() {
     const token = localStorage.getItem('jwt_token');
-    if (!token) throw new Error('Please sign in as Boss to view reports.');
+    if (!token) throw new Error('Please sign in as the Boss to view reports.');
     return token;
   }
 
@@ -183,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
         reportStatus.textContent = 'No reports have been submitted.';
         return;
       }
-      reportStatus.textContent = `${data.reports.length} report${data.reports.length === 1 ? '' : 's'} available to Boss only.`;
+      reportStatus.textContent = `${data.reports.length} report${data.reports.length === 1 ? '' : 's'} available to the Boss.`;
       for (const report of data.reports) {
         const article = document.createElement('article');
         article.className = 'workflow-record';
