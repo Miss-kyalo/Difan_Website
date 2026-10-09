@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
 
+const readJson = async (response) => {
+  const text = await response.text();
+  if (!text) {
+    throw new Error(response.ok ? 'The server returned an empty response.' : 'The server is unavailable. Please try again shortly.');
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('The server returned an unexpected response. Please try again shortly.');
+  }
+};
+
 export default function LoginPage({ onLoginSuccess }) {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -16,7 +28,7 @@ export default function LoginPage({ onLoginSuccess }) {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/login', {
+      const response = await fetch(window.DifanApp.apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -25,7 +37,7 @@ export default function LoginPage({ onLoginSuccess }) {
         }),
       });
 
-      const data = await response.json();
+      const data = await readJson(response);
 
       if (!response.ok) {
         throw new Error(data.message || 'Authentication failed');
@@ -60,7 +72,7 @@ export default function LoginPage({ onLoginSuccess }) {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/change-password', {
+      const response = await fetch(window.DifanApp.apiUrl('/api/auth/change-password'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -68,7 +80,7 @@ export default function LoginPage({ onLoginSuccess }) {
         },
         body: JSON.stringify({ password: newPassword }),
       });
-      const data = await response.json();
+      const data = await readJson(response);
       if (!response.ok) {
         throw new Error(data.message || 'Password change failed.');
       }

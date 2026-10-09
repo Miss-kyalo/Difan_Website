@@ -3,7 +3,8 @@ import math
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
@@ -13,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from backend.models.payroll import db
 from backend.routes.auth import ADMIN_ROLES, HR_ROLES, UserAccount
-from backend.routes.shipments import Shipment
+from backend.routes.shipments import Shipment, ShipmentGeofenceEvent
 
 portal_bp = Blueprint('portal', __name__, url_prefix='/api/portal')
 CONTAINER_SIZES = {'20ft', '40ft'}
@@ -41,6 +42,7 @@ REPORT_MEDIA_FORMATS = {
     '.opus': ('audio', 'audio/ogg'),
 }
 VAT_RATE = 0.16
+REPORT_STATUSES = ('RECEIVED', 'UNDER_REVIEW', 'INVESTIGATING', 'ACTION_TAKEN', 'CLOSED')
 
 
 class AnonymousReport(db.Model):
@@ -50,7 +52,19 @@ class AnonymousReport(db.Model):
     reference = db.Column(db.String(32), unique=True, nullable=False, index=True)
     description = db.Column(db.String(5000), nullable=False, default='')
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    status = db.Column(db.String(20), nullable=False, default='RECEIVED')
+    status_updated_at = db.Column(db.DateTime(timezone=True), nullable=True)
     attachments = db.relationship('AnonymousReportAttachment', backref='report', lazy=True, cascade='all, delete-orphan')
+
+    def status_dict(self):
+        status = self.status if self.status in REPORT_STATUSES else 'RECEIVED'
+        updated_at = self.status_updated_at or self.created_at
+        return {
+            'status': status,
+            'status_step': REPORT_STATUSES.index(status) + 1,
+            'status_total_steps': len(REPORT_STATUSES),
+            'status_updated_at': updated_at.isoformat() if updated_at else None,
+        }
 
     def to_dict(self):
         return {
@@ -58,6 +72,7 @@ class AnonymousReport(db.Model):
             'reference': self.reference,
             'description': self.description,
             'created_at': self.created_at.isoformat(),
+            **self.status_dict(),
             'attachments': [attachment.to_dict() for attachment in self.attachments],
         }
 
@@ -319,6 +334,9 @@ class PayrollSlip(db.Model):
     bonus = db.Column(db.Float, nullable=False, default=0)
     deductions = db.Column(db.Float, nullable=False, default=0)
     salary_advance = db.Column(db.Float, nullable=False, default=0)
+    housing_allowance = db.Column(db.Float, nullable=False, default=0)
+    off_duty_days = db.Column(db.Float, nullable=False, default=0)
+    off_duty_pay = db.Column(db.Float, nullable=False, default=0)
     nssf_deduction = db.Column(db.Float, nullable=True)
     shif_deduction = db.Column(db.Float, nullable=True)
     housing_levy_deduction = db.Column(db.Float, nullable=True)
@@ -343,11 +361,15 @@ class PayrollSlip(db.Model):
     signature_ip_address = db.Column(db.String(64), nullable=True)
     signature_latitude = db.Column(db.Float, nullable=True)
     signature_longitude = db.Column(db.Float, nullable=True)
+    dispute_message = db.Column(db.String(2000), nullable=True)
+    dispute_submitted_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    dispute_status = db.Column(db.String(24), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     employee = db.relationship('UserAccount', foreign_keys=[employee_id])
 
     def to_dict(self):
         employee_name = self.employee.display_name or self.employee.driver_name or self.employee.email
+        dispute_deadline = payroll_dispute_deadline(self.pay_period)
         return {
             'id': self.id,
             'employee_id': self.employee_id,
@@ -356,6 +378,9 @@ class PayrollSlip(db.Model):
             'pay_period': self.pay_period,
             'basic_pay': self.basic_pay,
             'allowances': self.allowances,
+            'housing_allowance': self.housing_allowance,
+            'off_duty_days': self.off_duty_days,
+            'off_duty_pay': self.off_duty_pay,
             'bonus': self.bonus,
             'deductions': self.deductions,
             'salary_advance': self.salary_advance,
@@ -376,6 +401,14 @@ class PayrollSlip(db.Model):
             'paystub_signed_at': self.paystub_signed_at.isoformat() if self.paystub_signed_at else None,
             'advance_signed_at': self.advance_signed_at.isoformat() if self.advance_signed_at else None,
             'signed_pdf_sha256': self.signed_pdf_sha256,
+            'dispute_message': self.dispute_message,
+            'dispute_submitted_at': self.dispute_submitted_at.isoformat() if self.dispute_submitted_at else None,
+            'dispute_status': self.dispute_status,
+            'dispute_deadline_at': dispute_deadline.isoformat() if dispute_deadline else None,
+            'dispute_window_open': bool(
+                dispute_deadline
+                and datetime.now(ZoneInfo('Africa/Nairobi')) <= dispute_deadline
+            ),
         }
 
 
@@ -563,6 +596,7 @@ def submit_anonymous_report():
     report = AnonymousReport()
     report.reference = f"AR-{datetime.now(timezone.utc):%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
     report.description = description.strip()
+    report.status = 'RECEIVED'
     db.session.add(report)
     report_directory = current_app.config['ANONYMOUS_REPORTS_DIR']
     os.makedirs(report_directory, mode=0o700, exist_ok=True)
@@ -603,7 +637,40 @@ def submit_anonymous_report():
         'status': 'success',
         'message': 'Your report was submitted anonymously.',
         'reference': report.reference,
+        'report_status': report.status_dict(),
     }), 201
+
+
+@portal_bp.get('/anonymous-reports/status/<reference>')
+def anonymous_report_status(reference):
+    report = AnonymousReport.query.filter_by(reference=reference.strip().upper()).first()
+    if not report:
+        return jsonify({'status': 'error', 'message': 'No report was found with that reference.'}), 404
+    return jsonify({
+        'status': 'success',
+        'reference': report.reference,
+        'report_status': report.status_dict(),
+        'statuses': list(REPORT_STATUSES),
+    }), 200
+
+
+@portal_bp.patch('/anonymous-reports/<int:report_id>/status')
+@jwt_required()
+def update_anonymous_report_status(report_id):
+    user = current_user()
+    if not user or user.account_status != 'active' or user.role != 'boss':
+        return jsonify({'status': 'error', 'message': 'Only the Boss can update anonymous report progress.'}), 403
+    report = db.session.get(AnonymousReport, report_id)
+    if not report:
+        return jsonify({'status': 'error', 'message': 'Report was not found.'}), 404
+    payload = request.get_json(silent=True)
+    new_status = payload.get('status') if isinstance(payload, dict) else None
+    if new_status not in REPORT_STATUSES:
+        return jsonify({'status': 'error', 'message': 'Choose a valid report status.'}), 400
+    report.status = new_status
+    report.status_updated_at = datetime.now(timezone.utc)
+    db.session.commit()
+    return jsonify({'status': 'success', 'report': report.to_dict()}), 200
 
 
 @portal_bp.get('/anonymous-reports')
@@ -878,6 +945,147 @@ def list_delivery_finance():
     }), 200
 
 
+@portal_bp.get('/delivery-finance/monthly-statement')
+@jwt_required()
+def download_monthly_delivery_statement():
+    user = current_user()
+    if not user or user.role not in FINANCE_VIEW_ROLES:
+        return jsonify({'status': 'error', 'message': 'Finance access is not available for this account.'}), 403
+
+    month_value = request.args.get('month', '')
+    try:
+        month_start = datetime.strptime(month_value, '%Y-%m').replace(tzinfo=timezone.utc)
+        if month_start.strftime('%Y-%m') != month_value:
+            raise ValueError
+    except ValueError:
+        return jsonify({'status': 'error', 'message': 'Choose a statement month in YYYY-MM format.'}), 400
+
+    if month_start.month == 12:
+        month_end = month_start.replace(year=month_start.year + 1, month=1)
+    else:
+        month_end = month_start.replace(month=month_start.month + 1)
+
+    shipments = Shipment.query.filter(
+        Shipment.status == 'DELIVERED',
+        Shipment.arrived_at >= month_start,
+        Shipment.arrived_at < month_end,
+    ).order_by(Shipment.arrived_at.asc()).all()
+    if user.role == 'client':
+        company_name = (user.company_name or '').strip().casefold()
+        shipments = [
+            shipment for shipment in shipments
+            if shipment.client_user_id == user.id
+            or (
+                shipment.client_user_id is None
+                and (shipment.company_name or '').strip().casefold() == company_name
+            )
+        ]
+
+    tracking_numbers = [shipment.tracking_number for shipment in shipments]
+    finance_by_tracking = {
+        finance.tracking_number: finance
+        for finance in ShipmentFinance.query.filter(
+            ShipmentFinance.tracking_number.in_(tracking_numbers)
+        ).all()
+    } if tracking_numbers else {}
+    geofence_events = ShipmentGeofenceEvent.query.filter(
+        ShipmentGeofenceEvent.shipment_tracking_number.in_(tracking_numbers),
+        ShipmentGeofenceEvent.site_type == 'PICKUP',
+    ).order_by(ShipmentGeofenceEvent.recorded_at.asc()).all() if tracking_numbers else []
+
+    dwell_by_tracking = {}
+    open_arrivals = {}
+    for event in geofence_events:
+        tracking_number = event.shipment_tracking_number
+        if event.event_type == 'ARRIVE':
+            open_arrivals.setdefault(tracking_number, event.recorded_at)
+        elif event.event_type == 'DEPART' and tracking_number in open_arrivals:
+            started_at = open_arrivals.pop(tracking_number)
+            dwell_seconds = (event.recorded_at - started_at).total_seconds()
+            if dwell_seconds >= 0:
+                dwell_by_tracking.setdefault(tracking_number, []).append(dwell_seconds)
+    dwell_minutes = [
+        seconds / 60
+        for durations in dwell_by_tracking.values()
+        for seconds in durations
+    ]
+
+    rows = []
+    invoice_total = paid_total = balance_total = 0.0
+    for shipment in shipments:
+        finance = finance_by_tracking.get(shipment.tracking_number)
+        invoice_amount = (
+            finance.invoice_amount_kes
+            if finance and finance.invoice_amount_kes is not None
+            else shipment.quoted_amount_kes
+        )
+        paid_amount = finance.paid_amount_kes if finance else 0.0
+        balance = max((invoice_amount or 0) - paid_amount, 0)
+        invoice_total += invoice_amount or 0
+        paid_total += paid_amount
+        balance_total += balance
+        rows.append((
+            shipment.tracking_number,
+            shipment.arrived_at.strftime('%Y-%m-%d'),
+            f'{shipment.origin} to {shipment.destination}',
+            round(invoice_amount, 2) if invoice_amount is not None else None,
+            round(paid_amount, 2),
+            round(balance, 2),
+        ))
+
+    average_wait_minutes = (
+        sum(dwell_minutes) / len(dwell_minutes) if dwell_minutes else None
+    )
+    document = fitz.open()
+    page = document.new_page()
+    y = 48
+    company_label = user.company_name if user.role == 'client' else 'All client accounts'
+    page.insert_text((42, y), f'Monthly Delivery Statement - {month_value}', fontsize=16)
+    y += 24
+    page.insert_text((42, y), f'Account: {company_label or "Client"}', fontsize=10)
+    y += 20
+    page.insert_text(
+        (42, y),
+        f'Deliveries: {len(rows)} | Average pickup wait: '
+        f'{"n/a" if average_wait_minutes is None else f"{average_wait_minutes:.1f} minutes"}',
+        fontsize=10,
+    )
+    y += 24
+    page.insert_text((42, y), 'Tracking / Date / Route / Invoice / Paid / Balance (KES)', fontsize=9)
+    y += 16
+    for tracking, delivered_date, route, invoice, paid, balance in rows:
+        if y > 770:
+            page = document.new_page()
+            y = 48
+            page.insert_text((42, y), f'Monthly Delivery Statement - {month_value}', fontsize=13)
+            y += 24
+        invoice_text = 'Not invoiced' if invoice is None else f'{invoice:,.2f}'
+        page.insert_text(
+            (42, y),
+            f'{tracking} | {delivered_date} | {route[:42]} | {invoice_text} | {paid:,.2f} | {balance:,.2f}',
+            fontsize=8,
+        )
+        y += 16
+    if y > 770:
+        page = document.new_page()
+        y = 48
+    page.insert_text(
+        (42, y + 8),
+        f'Totals (KES): Invoiced {invoice_total:,.2f} | Paid {paid_total:,.2f} | Outstanding {balance_total:,.2f}',
+        fontsize=9,
+    )
+    pdf_bytes = document.tobytes()
+    document.close()
+    response = send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f'delivery-statement-{month_value}.pdf',
+    )
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
+
+
 @portal_bp.patch('/delivery-finance/<tracking_number>')
 @jwt_required()
 def update_delivery_finance(tracking_number):
@@ -1149,6 +1357,54 @@ def parse_payroll_month(pay_period, year=None):
     return None
 
 
+def payroll_dispute_deadline(pay_period):
+    period = parse_payroll_month(pay_period)
+    if not period:
+        return None
+    next_month = datetime(
+        period.year + (period.month == 12),
+        1 if period.month == 12 else period.month + 1,
+        1,
+        tzinfo=ZoneInfo('Africa/Nairobi'),
+    )
+    release_at = next_month - timedelta(microseconds=1)
+    return release_at - timedelta(hours=48)
+
+
+@portal_bp.post('/payroll/<int:slip_id>/dispute')
+@jwt_required()
+def dispute_payroll_slip(slip_id):
+    user = current_user()
+    slip = db.session.get(PayrollSlip, slip_id)
+    if not user or not slip or slip.employee_id != user.id:
+        return jsonify({'status': 'error', 'message': 'Payslip was not found for this account.'}), 404
+    if slip.status != 'APPROVED':
+        return jsonify({'status': 'error', 'message': 'Only a published paystub can be contested.'}), 409
+    deadline = payroll_dispute_deadline(slip.pay_period)
+    now = datetime.now(ZoneInfo('Africa/Nairobi'))
+    if deadline is None:
+        return jsonify({'status': 'error', 'message': 'This pay period has no valid month-end dispute deadline.'}), 409
+    if now > deadline:
+        return jsonify({
+            'status': 'error',
+            'message': f'The contest window closed at {deadline.isoformat()}.',
+            'dispute_deadline_at': deadline.isoformat(),
+        }), 409
+    data = request_data()
+    message = data.get('message')
+    if not isinstance(message, str) or not message.strip() or len(message.strip()) > 2000:
+        return jsonify({'status': 'error', 'message': 'Enter the dispute details (up to 2,000 characters).'}), 400
+    slip.dispute_message = message.strip()
+    slip.dispute_submitted_at = datetime.now(timezone.utc)
+    slip.dispute_status = 'SUBMITTED'
+    db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'message': 'Your paystub contest was sent to HR.',
+        'slip': slip.to_dict(),
+    }), 201
+
+
 def format_payroll_amount(value):
     return f'KES {value:,.2f}' if value is not None else 'Not entered'
 
@@ -1200,7 +1456,7 @@ def _create_p9_pdf(employee, year):
     employee_name = employee.display_name or employee.driver_name or employee.email
     employer_name = current_app.config.get('PAYROLL_EMPLOYER_NAME', 'Difan Logistics')
     employer_pin = current_app.config.get('PAYROLL_EMPLOYER_KRA_PIN') or 'Not configured'
-    employee_pin = current_app.config.get(f'PAYROLL_EMPLOYEE_{employee.id}_KRA_PIN') or 'Not provided'
+    employee_pin = employee.kra_pin or current_app.config.get(f'PAYROLL_EMPLOYEE_{employee.id}_KRA_PIN') or 'Not provided'
     monthly_fields = (
         ('Gross pay', 'gross_pay'),
         ('NSSF', 'nssf_deduction'),
@@ -1260,6 +1516,8 @@ def download_payroll_slip_pdf(slip_id):
         f'Employee: {slip.employee.display_name or slip.employee.driver_name or slip.employee.email}',
         f'Pay period: {slip.pay_period}',
         f'Basic pay: {format_payroll_amount(slip.basic_pay)}',
+        f'Housing allowance: {format_payroll_amount(slip.housing_allowance)}',
+        f'Off-duty pay ({slip.off_duty_days:g} day(s)): {format_payroll_amount(slip.off_duty_pay)}',
         f'Allowances: {format_payroll_amount(slip.allowances)}',
         f'Bonus: {format_payroll_amount(slip.bonus)}',
         f'Gross pay: {format_payroll_amount(slip.gross_pay)}',
@@ -1327,6 +1585,18 @@ def create_payroll_slip():
         bonus = parse_amount(data.get('bonus', 0))
         deductions = parse_amount(data.get('deductions', 0))
         salary_advance = parse_amount(data.get('salary_advance', 0))
+        auto_calculate = data.get('auto_calculate') is True
+        housing_allowance = (
+            parse_amount(data['housing_allowance'])
+            if data.get('housing_allowance') not in (None, '')
+            else (round(basic_pay * 0.15, 2) if auto_calculate else 0.0)
+        )
+        off_duty_days = parse_amount(data.get('off_duty_days', 0) or 0)
+        off_duty_pay = (
+            parse_amount(data['off_duty_pay'])
+            if data.get('off_duty_pay') not in (None, '')
+            else round(basic_pay / 26 * off_duty_days, 2)
+        )
         statutory_fields = (
             'nssf_deduction', 'shif_deduction', 'housing_levy_deduction',
             'taxable_pay', 'tax_charged', 'personal_relief', 'other_reliefs', 'paye_tax',
@@ -1346,7 +1616,7 @@ def create_payroll_slip():
         return jsonify({'status': 'error', 'message': 'Choose an existing employee account.'}), 400
     if not period or len(period) > 20:
         return jsonify({'status': 'error', 'message': 'Enter a payroll period of 20 characters or fewer.'}), 400
-    all_amounts = [basic_pay, allowances, bonus, deductions, salary_advance, *(
+    all_amounts = [basic_pay, allowances, bonus, deductions, salary_advance, housing_allowance, off_duty_days, off_duty_pay, *(
         amount for amount in statutory_amounts.values() if amount is not None
     )]
     if min(all_amounts) < 0 or max(all_amounts) > 100_000_000:
@@ -1354,8 +1624,23 @@ def create_payroll_slip():
     if PayrollSlip.query.filter_by(employee_id=employee.id, pay_period=period).first():
         return jsonify({'status': 'error', 'message': 'A payslip already exists for this employee and period.'}), 409
 
-    gross_pay = round(basic_pay + allowances + bonus, 2)
-    if deductions + salary_advance > gross_pay:
+    gross_pay = round(basic_pay + housing_allowance + off_duty_pay + allowances + bonus, 2)
+    statutory_total = 0.0
+    if auto_calculate:
+        from backend.routes.hr import calculate_statutory_deductions
+        computed = calculate_statutory_deductions(gross_pay)
+        statutory_amounts.update({
+            'nssf_deduction': computed['nssf'],
+            'shif_deduction': computed['shif'],
+            'housing_levy_deduction': computed['housing_levy'],
+            'taxable_pay': computed['taxable_pay'],
+            'tax_charged': computed['tax_charged'],
+            'personal_relief': computed['personal_relief'],
+            'other_reliefs': 0.0,
+            'paye_tax': computed['paye'],
+        })
+        statutory_total = computed['total_deductions']
+    if statutory_total + deductions + salary_advance > gross_pay:
         return jsonify({'status': 'error', 'message': 'Deductions cannot exceed gross pay.'}), 400
     slip = PayrollSlip()
     slip.employee_id = employee.id
@@ -1365,10 +1650,13 @@ def create_payroll_slip():
     slip.bonus = bonus
     slip.deductions = deductions
     slip.salary_advance = salary_advance
+    slip.housing_allowance = housing_allowance
+    slip.off_duty_days = off_duty_days
+    slip.off_duty_pay = off_duty_pay
     for field, amount in statutory_amounts.items():
         setattr(slip, field, amount)
     slip.gross_pay = gross_pay
-    slip.net_pay = round(gross_pay - deductions - salary_advance, 2)
+    slip.net_pay = round(gross_pay - statutory_total - deductions - salary_advance, 2)
     slip.status = 'PENDING_APPROVAL'
     slip.created_by_id = admin.id
     db.session.add(slip)

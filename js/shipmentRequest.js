@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function apiRequest(path, options = {}) {
-    const response = await fetch(`http://localhost:5000${path}`, {
+    const response = await fetch(window.DifanApp.apiUrl(path), {
       ...options,
       headers: { ...tokenHeaders(), ...options.headers },
     });
@@ -149,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
           delivery_due_at: new Date(deliveryDueAtInput.value).toISOString(),
           end_customer_name: document.getElementById('request-customer-name').value.trim(),
           end_customer_phone: document.getElementById('request-customer-phone').value.trim(),
+          end_customer_email: document.getElementById('request-customer-email').value.trim(),
           end_customer_address: document.getElementById('request-customer-address').value.trim(),
         }),
       });

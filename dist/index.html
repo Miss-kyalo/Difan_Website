@@ -195,8 +195,9 @@
         .tracking-action-button { width: 100%; }
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-DbCeH2iy.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-rwYSnER3.css">
+    <script type="module" crossorigin src="/assets/main-DDKxFR7j.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/main-CIGW-MKW.css">
+    <link rel="stylesheet" crossorigin href="/assets/style-BbZyGL7s.css">
   </head>
   <body>
     <div id="public-home" class="public-home">
@@ -397,6 +398,7 @@
             <a href="#" id="finance-navigation" class="nav-link" data-target-tab="finance">Finance</a>
             <a href="#" id="messages-navigation" class="nav-link" data-target-tab="messages" hidden>Messages</a>
             <a href="#" id="employees-navigation" class="nav-link" data-target-tab="employees" hidden>Employees</a>
+            <a href="#" id="ratesheets-navigation" class="nav-link" data-target-tab="ratesheets" hidden>Rate sheets</a>
             <a href="#" id="onboarding-navigation" class="nav-link" data-target-tab="onboarding" hidden>Onboarding</a>
             <a href="#" id="workforce-navigation" class="nav-link" data-target-tab="workforce" hidden>Payroll & HR</a>
             <a href="#" id="reports-navigation" class="nav-link" data-target-tab="reports" hidden>Reports</a>
@@ -461,6 +463,25 @@
               <div><dt>Position</dt><dd id="employee-profile-role"></dd></div>
               <div><dt>Work station</dt><dd id="employee-profile-station"></dd></div>
             </dl>
+            <form id="employee-statutory-form" class="workflow-form">
+              <h3>My statutory details</h3>
+              <p class="muted">Only you and Difan admin staff can see these.</p>
+              <div class="workflow-grid">
+                <div class="field"><label for="employee-kra-pin">KRA PIN</label><input id="employee-kra-pin" maxlength="11" autocomplete="off" placeholder="A123456789B" /></div>
+                <div class="field"><label for="employee-nssf">NSSF number</label><input id="employee-nssf" maxlength="20" autocomplete="off" /></div>
+                <div class="field"><label for="employee-shif">SHIF number</label><input id="employee-shif" maxlength="20" autocomplete="off" /></div>
+              </div>
+              <button class="btn btn-secondary" type="submit">Save statutory details</button>
+              <p id="employee-statutory-status" class="tracking-status" role="status" aria-live="polite"></p>
+            </form>
+            <form id="employee-phone-form" class="workflow-form">
+              <div class="field">
+                <label for="employee-phone">My phone number (shown to colleagues on vehicle profiles)</label>
+                <input id="employee-phone" type="tel" maxlength="40" />
+              </div>
+              <button class="btn btn-secondary" type="submit">Save phone number</button>
+              <p id="employee-phone-status" class="tracking-status" role="status" aria-live="polite"></p>
+            </form>
           </section>
 
           <section id="dashboard-community-section" class="dashboard-community" hidden>
@@ -475,8 +496,14 @@
             <div class="community-highlights" aria-label="Community channels">
               <a href="#client-notices-home" data-target-tab="dashboard" data-target-section="client-notices-home"><i>✦</i> Client notices</a>
               <a href="#" data-target-tab="messages"><i>↗</i> Private messages</a>
-              <a href="mailto:info@difan-logistics.com"><i>◎</i> Difan support</a>
+              <a href="#difan-support-contacts"><i>◎</i> Difan support contacts</a>
             </div>
+            <section id="difan-support-contacts" class="community-side-card">
+              <p class="profile-eyebrow">Difan support</p>
+              <h3>Contact Difan Logistics</h3>
+              <p><a href="mailto:info@difan-logistics.com">info@difan-logistics.com</a></p>
+              <p><a href="tel:0720778812">0720778812</a> · <a href="tel:0720253922">0720253922</a> · <a href="tel:0790979993">0790979993</a></p>
+            </section>
             <div id="client-community-view" class="community-layout" hidden>
               <div class="community-feed-column">
                 <section id="client-notices-home" class="community-side-card">
@@ -634,6 +661,7 @@
           <section id="workforce-lockout-panel" class="rounded-box workforce-lockout" hidden role="alert">
             <h2>Action required: acknowledge your records</h2>
             <p>You must review and sign each pending paystub, terms update, or consent agreement before returning to other app features. Safety & emergency reporting remains available below.</p>
+            <p class="muted">Drivers on an active load or with an unresolved safety emergency may defer paystub sign-off once per payroll cycle for 12 hours. Other pending legal acknowledgements remain due.</p>
             <div id="workforce-pending-list" class="workforce-grid"></div>
             <div id="workforce-signing-panel" hidden>
               <h3 id="workforce-signing-title"></h3>
@@ -654,11 +682,13 @@
           <section class="rounded-box">
             <h2>My paystubs, terms & consent</h2>
             <p class="muted">Salary advances are shown separately as “Salary Advance / Early Cashout”. Electronic signatures are timestamped and stored as encrypted, immutable PDFs.</p>
+            <p class="muted">You may contest a paystub until 48 hours before the salary release date at month-end. Submit any dispute through this portal before the displayed deadline.</p>
             <div class="workflow-actions">
               <div class="field"><label for="workforce-payroll-year">Payroll year</label><select id="workforce-payroll-year"></select></div>
               <button id="workforce-download-own-p9" class="btn btn-secondary" type="button">Download my P9 annual summary</button>
             </div>
             <p id="workforce-p9-status" class="tracking-status" role="status" aria-live="polite"></p>
+            <p id="workforce-signoff-deferral-status" class="muted" role="status" aria-live="polite"></p>
             <div id="workforce-payroll-list" class="workforce-grid"></div>
             <div id="workforce-notice-list" class="workforce-grid"></div>
           </section>
@@ -698,20 +728,26 @@
             <p id="workforce-driver-client-rating-status" class="tracking-status" role="status" aria-live="polite"></p>
           </section>
 
-          <section class="rounded-box">
-            <h2>Fleet leaderboard</h2>
-            <p class="muted">Only drivers who opt in are shown. Customer and on-time metrics are monthly; HR infractions decay over 90 days.</p>
-            <div id="workforce-leaderboard" class="workforce-grid"></div>
-          </section>
-
           <section id="workforce-hr-dashboard" class="rounded-box" hidden>
             <section id="workforce-client-leaderboard-panel">
               <h2>Top-rated client facilities</h2>
               <p class="muted">Aggregated driver feedback on loading speed and facility friendliness, based on completed deliveries.</p>
               <div id="workforce-client-leaderboard" class="workforce-grid"></div>
             </section>
+            <section id="workforce-distribution-delay-panel" class="rounded-box">
+              <h2>Distribution-center delay and detention report</h2>
+              <p class="muted">Completed geofence visits are ranked by the longest recorded pickup-site dwell. Average delay, open visits, and contract detention charges are also shown to help target warehouse operations.</p>
+              <div class="operations-table-wrap">
+                <table class="table-grid">
+                  <thead><tr><th>Distribution center</th><th>Completed visits</th><th>Open visits</th><th>Average delay (hours)</th><th>Longest delay (hours)</th><th>Open delay (hours)</th><th>Detention charges (KES before VAT)</th></tr></thead>
+                  <tbody id="workforce-distribution-delay-rows"></tbody>
+                </table>
+              </div>
+              <p id="workforce-distribution-delay-status" class="tracking-status" role="status" aria-live="polite"></p>
+            </section>
             <h2>HR driver availability</h2>
-            <p class="muted">Drivers not marked Active are excluded from dispatch assignment.</p>
+            <p class="muted">Availability refreshes with the HR dashboard every 30 seconds. Drivers not marked Active are blocked from dispatch assignment and trip start.</p>
+            <div id="workforce-driver-availability-counts" class="workforce-grid" aria-live="polite"></div>
             <div id="workforce-driver-status-list" class="workforce-grid"></div>
             <h2>Issue a formal HR record</h2>
             <form id="workforce-case-form" class="workflow-form">
@@ -732,6 +768,7 @@
                   <label for="workforce-case-severity">Score severity</label>
                   <select id="workforce-case-severity" required>
                     <option value="MINOR_LATE_ARRIVAL">Minor Late Arrival · −2</option>
+                    <option value="POD_DOCUMENTATION">Missing POD Documentation · −2</option>
                     <option value="CARGO_MISMANAGEMENT">Cargo Mismanagement · −5</option>
                     <option value="UNEXCUSED_ABSENCE">Unexcused Absence · −10</option>
                     <option value="SAFETY_COMPLIANCE">Safety Compliance Violation · −20</option>
@@ -762,18 +799,22 @@
                 <div class="field"><label for="workforce-payroll-employee">Employee</label><select id="workforce-payroll-employee" required></select></div>
                 <div class="field"><label for="workforce-payroll-period">Pay period</label><input id="workforce-payroll-period" type="month" required /></div>
                 <div class="field"><label for="workforce-payroll-basic">Basic salary (KES)</label><input id="workforce-payroll-basic" type="number" min="0" step="0.01" required /></div>
-                <div class="field"><label for="workforce-payroll-allowances">Allowances (KES)</label><input id="workforce-payroll-allowances" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field"><label for="workforce-payroll-housing-allowance">Housing allowance (KES)</label><input id="workforce-payroll-housing-allowance" type="number" min="0" step="0.01" placeholder="Blank = 15% of basic" /></div>
+                <div class="field"><label for="workforce-payroll-offduty-days">Off-duty days worked</label><input id="workforce-payroll-offduty-days" type="number" min="0" step="0.5" value="0" /></div>
+                <div class="field"><label for="workforce-payroll-offduty-pay">Off-duty pay (KES)</label><input id="workforce-payroll-offduty-pay" type="number" min="0" step="0.01" placeholder="Blank = days × basic ÷ 26" /></div>
+                <div class="field workflow-field-wide"><label><input id="workforce-payroll-auto" type="checkbox" checked /> Auto-calculate PAYE, NSSF, SHIF and Housing Levy from gross pay</label></div>
+                <div class="field"><label for="workforce-payroll-allowances">Other allowances (KES)</label><input id="workforce-payroll-allowances" type="number" min="0" step="0.01" value="0" required /></div>
                 <div class="field"><label for="workforce-payroll-bonus">Bonus (KES)</label><input id="workforce-payroll-bonus" type="number" min="0" step="0.01" value="0" required /></div>
                 <div class="field"><label for="workforce-payroll-deductions">Standard payroll deductions (KES)</label><input id="workforce-payroll-deductions" type="number" min="0" step="0.01" value="0" required /></div>
                 <div class="field"><label for="workforce-payroll-advance">Salary Advance / Early Cashout (KES)</label><input id="workforce-payroll-advance" type="number" min="0" step="0.01" value="0" required /></div>
-                <div class="field"><label for="workforce-payroll-nssf">NSSF deduction (KES)</label><input id="workforce-payroll-nssf" type="number" min="0" step="0.01" value="0" required /></div>
-                <div class="field"><label for="workforce-payroll-shif">SHIF deduction (KES)</label><input id="workforce-payroll-shif" type="number" min="0" step="0.01" value="0" required /></div>
-                <div class="field"><label for="workforce-payroll-housing">Housing levy (KES)</label><input id="workforce-payroll-housing" type="number" min="0" step="0.01" value="0" required /></div>
-                <div class="field"><label for="workforce-payroll-taxable">Taxable pay (KES)</label><input id="workforce-payroll-taxable" type="number" min="0" step="0.01" required /></div>
-                <div class="field"><label for="workforce-payroll-tax-charged">Tax charged (KES)</label><input id="workforce-payroll-tax-charged" type="number" min="0" step="0.01" value="0" required /></div>
-                <div class="field"><label for="workforce-payroll-personal-relief">Personal relief (KES)</label><input id="workforce-payroll-personal-relief" type="number" min="0" step="0.01" value="0" required /></div>
-                <div class="field"><label for="workforce-payroll-other-reliefs">Other reliefs (KES)</label><input id="workforce-payroll-other-reliefs" type="number" min="0" step="0.01" value="0" required /></div>
-                <div class="field"><label for="workforce-payroll-paye">PAYE (KES)</label><input id="workforce-payroll-paye" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field" data-manual-statutory><label for="workforce-payroll-nssf">NSSF deduction (KES)</label><input id="workforce-payroll-nssf" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field" data-manual-statutory><label for="workforce-payroll-shif">SHIF deduction (KES)</label><input id="workforce-payroll-shif" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field" data-manual-statutory><label for="workforce-payroll-housing">Housing levy (KES)</label><input id="workforce-payroll-housing" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field" data-manual-statutory><label for="workforce-payroll-taxable">Taxable pay (KES)</label><input id="workforce-payroll-taxable" type="number" min="0" step="0.01" required /></div>
+                <div class="field" data-manual-statutory><label for="workforce-payroll-tax-charged">Tax charged (KES)</label><input id="workforce-payroll-tax-charged" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field" data-manual-statutory><label for="workforce-payroll-personal-relief">Personal relief (KES)</label><input id="workforce-payroll-personal-relief" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field" data-manual-statutory><label for="workforce-payroll-other-reliefs">Other reliefs (KES)</label><input id="workforce-payroll-other-reliefs" type="number" min="0" step="0.01" value="0" required /></div>
+                <div class="field" data-manual-statutory><label for="workforce-payroll-paye">PAYE (KES)</label><input id="workforce-payroll-paye" type="number" min="0" step="0.01" value="0" required /></div>
               </div>
               <button class="btn btn-primary" type="submit">Create paystub</button>
             </form>
@@ -797,6 +838,20 @@
         </div>
 
         <div id="view-employees" class="tab-view" hidden>
+          <section id="admin-statutory-panel" class="rounded-box" hidden>
+            <h2>Employee statutory details</h2>
+            <p class="muted">KRA PIN, NSSF and SHIF numbers. Visible only to the employee and admin staff.</p>
+            <form id="admin-statutory-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field"><label for="admin-statutory-employee">Employee</label><select id="admin-statutory-employee" required></select></div>
+                <div class="field"><label for="admin-kra-pin">KRA PIN</label><input id="admin-kra-pin" maxlength="11" autocomplete="off" /></div>
+                <div class="field"><label for="admin-nssf">NSSF number</label><input id="admin-nssf" maxlength="20" autocomplete="off" /></div>
+                <div class="field"><label for="admin-shif">SHIF number</label><input id="admin-shif" maxlength="20" autocomplete="off" /></div>
+              </div>
+              <button class="btn btn-secondary" type="submit">Save details</button>
+            </form>
+            <p id="admin-statutory-status" class="tracking-status" role="status" aria-live="polite"></p>
+          </section>
           <section class="rounded-box">
             <div class="card-header">
               <div>
@@ -811,6 +866,11 @@
               <div><dt>Account status</dt><dd id="employee-section-status"></dd></div>
             </dl>
           </section>
+          <section class="rounded-box">
+            <h2>Fleet leaderboard</h2>
+            <p class="muted">Only drivers who opt in are shown. Customer and on-time metrics are monthly; HR infractions decay over 90 days.</p>
+            <div id="workforce-leaderboard" class="workforce-grid"></div>
+          </section>
           <section id="hr-approval-panel" class="rounded-box" hidden>
             <div class="card-header">
               <div>
@@ -822,38 +882,32 @@
             <div id="employee-registration-status" class="tracking-status" role="status" aria-live="polite"></div>
             <div id="employee-registration-list" class="workflow-records"></div>
           </section>
-          <section id="transport-enquiries-panel" class="rounded-box" hidden>
-            <div class="card-header">
-              <div>
-                <h2>Public transport enquiries</h2>
-                <p class="muted">Review new requests and record when your team has contacted the customer.</p>
-              </div>
-              <button id="refresh-transport-enquiries" class="btn btn-secondary" type="button">Refresh enquiries</button>
+        </div>
+
+        <div id="view-ratesheets" class="tab-view" hidden>
+          <section id="rate-sheets-panel" class="rounded-box">
+            <div class="card-header"><div><h2>Rate sheets</h2><p class="muted">Upload and review rates. The standard sheet feeds the quote page; each client can also have their own rate sheet.</p></div></div>
+            <div class="field">
+              <label for="rate-sheet-scope">Rate sheet</label>
+              <select id="rate-sheet-scope"><option value="standard">Standard rates (quote page)</option></select>
             </div>
-            <p id="transport-enquiries-status" class="tracking-status" role="status" aria-live="polite"></p>
-            <div id="transport-enquiries-list" class="workflow-records"></div>
-          </section>
-          <section id="container-rate-admin" class="rounded-box" hidden>
-            <div class="card-header">
               <div>
-                <h2>Container quote rates</h2>
-                <p class="muted">Set the fixed VAT-exclusive rate per container used in the quote calculator.</p>
-              </div>
-            </div>
-            <form id="container-rate-form" class="workflow-form">
-              <div class="workflow-grid">
-                <div class="field">
-                  <label for="container-rate-20ft">20 ft container rate (KES)</label>
-                  <input id="container-rate-20ft" type="number" min="0.01" max="10000000" step="0.01" required />
+                <h3>Import rates</h3>
+                <p class="muted">Upload an .xlsx or PDF with columns: origin, destination, truck_type, flat_rate_kes. PDF tables should use one pipe-separated rate per line. Rates are previewed for review before they affect quotes; the flat rate is before VAT.</p>
+                <form id="destination-rates-upload-form" class="workflow-form">
+                  <div class="field"><label for="destination-rates-file">Excel or PDF rate sheet</label><input id="destination-rates-file" type="file" accept=".xlsx,.pdf,application/pdf" required /></div>
+                  <button id="destination-rates-preview-button" class="btn btn-secondary" type="submit">Preview extracted rates</button>
+                </form>
+                <p id="destination-rates-status" class="tracking-status" role="status" aria-live="polite"></p>
+                <div class="operations-table-wrap">
+                  <table class="table-grid">
+                    <thead><tr><th>Row</th><th>Origin</th><th>Destination</th><th>Truck</th><th>Rate before VAT (KES)</th><th>Review</th></tr></thead>
+                    <tbody id="destination-rates-preview"></tbody>
+                  </table>
                 </div>
-                <div class="field">
-                  <label for="container-rate-40ft">40 ft container rate (KES)</label>
-                  <input id="container-rate-40ft" type="number" min="0.01" max="10000000" step="0.01" required />
-                </div>
-              </div>
-              <button class="btn btn-primary" type="submit">Save container rates</button>
-            </form>
-            <div id="container-rate-status" class="tracking-status" role="status" aria-live="polite"></div>
+                <button id="destination-rates-import-button" class="btn btn-primary" type="button" hidden>Confirm and apply valid rates</button>
+                <h4>Currently applied destination rates</h4>
+                <div id="destination-rates-current" class="workflow-records"></div>
           </section>
         </div>
 
@@ -886,6 +940,10 @@
                   <label for="onboarding-email">Account email</label>
                   <input id="onboarding-email" type="email" maxlength="120" required />
                 </div>
+                <div class="field">
+                  <label for="onboarding-phone">Phone number (optional)</label>
+                  <input id="onboarding-phone" type="tel" maxlength="40" />
+                </div>
                 <div id="onboarding-name-field" class="field" hidden>
                   <label for="onboarding-name">Employee name</label>
                   <input id="onboarding-name" type="text" maxlength="120" />
@@ -894,6 +952,46 @@
               <button id="account-onboarding-submit" class="btn btn-primary" type="submit">Create account and email credentials</button>
             </form>
             <div id="account-onboarding-status" class="tracking-status" role="status" aria-live="polite"></div>
+          </section>
+          <section id="account-role-panel" class="rounded-box" hidden>
+            <div class="card-header"><div><h2>Update account role</h2><p class="muted">Change the portal role of an existing account.</p></div></div>
+              <form id="account-role-form" class="workflow-form tracking-role-form">
+                <div class="workflow-grid">
+                  <div class="field">
+                    <label for="account-role-user">Account</label>
+                    <select id="account-role-user" required></select>
+                  </div>
+                  <div class="field">
+                    <label for="account-role-value">Portal role</label>
+                    <select id="account-role-value" required>
+                      <option value="client">Client</option>
+                      <option value="driver">Driver</option>
+                      <option value="accountant">Accounts</option>
+                      <option value="admin">Admin</option>
+                      <option value="hr">HR</option>
+                      <option value="boss">Boss</option>
+                      <option value="mechanic">Mechanic</option>
+                    </select>
+                  </div>
+                  <div id="driver-name-field" class="field" hidden>
+                    <label for="account-driver-name">Employee display name</label>
+                    <input id="account-driver-name" type="text" maxlength="120" />
+                  </div>
+                </div>
+                <button class="btn btn-secondary" type="submit">Update account role</button>
+              </form>
+            <div id="account-role-status" class="tracking-status" role="status" aria-live="polite"></div>
+          </section>
+          <section id="onboarded-accounts-panel" class="rounded-box" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Onboarded clients and employees</h2>
+                <p class="muted">Accounts created by HR or the Boss, including their current status.</p>
+              </div>
+              <button id="refresh-onboarded-accounts" class="btn btn-secondary" type="button">Refresh accounts</button>
+            </div>
+            <p id="onboarded-accounts-status" class="tracking-status" role="status" aria-live="polite"></p>
+            <div id="onboarded-accounts-list" class="workflow-records"></div>
           </section>
         </div>
 
@@ -945,6 +1043,8 @@
                 <div class="field workflow-field-wide"><label for="fleet-incident-findings">Inspection findings</label><textarea id="fleet-incident-findings" rows="3" maxlength="2000"></textarea></div>
                 <div class="field workflow-field-wide"><label for="fleet-incident-action">Immediate action / repair</label><textarea id="fleet-incident-action" rows="3" maxlength="2000"></textarea></div>
                 <div class="field workflow-field-wide"><label for="fleet-incident-parts">Parts used</label><textarea id="fleet-incident-parts" rows="2" maxlength="1000"></textarea></div>
+                <div class="field"><label for="fleet-incident-replacement-driver">Replacement driver (optional)</label><input id="fleet-incident-replacement-driver" type="text" maxlength="120" /></div>
+                <div class="field"><label for="fleet-incident-mechanic-in-charge">Mechanic in charge (optional)</label><input id="fleet-incident-mechanic-in-charge" type="text" maxlength="120" /></div>
               </div>
               <button class="btn btn-primary" type="submit">Save incident report</button>
             </form>
@@ -1050,9 +1150,11 @@
                 <thead>
                   <tr>
                     <th>Truck</th>
-                    <th>Driver</th>
+                    <th>Reported by</th>
                     <th>Status</th>
-                    <th>Recovery Action</th>
+                    <th>Replacement driver</th>
+                    <th>Mechanic in charge</th>
+                    <th>Repair / recovery action</th>
                   </tr>
                 </thead>
                 <tbody id="breakdown-control-rows"></tbody>
@@ -1080,6 +1182,17 @@
               </div>
             </div>
             <div id="goods-delivery-details" class="workflow-records" aria-live="polite"></div>
+            <section id="client-distribution-delay-panel" class="rounded-box" hidden>
+              <h3>Your distribution-center delay insights</h3>
+              <p class="muted">Pickup-site dwell is measured only from GPS-verified arrival and departure events on your shipments. Use the average and longest delays to identify facilities that may need process changes.</p>
+              <div class="operations-table-wrap">
+                <table class="table-grid">
+                  <thead><tr><th>Distribution center</th><th>Completed visits</th><th>Average delay (hours)</th><th>Longest delay (hours)</th></tr></thead>
+                  <tbody id="client-distribution-delay-rows"></tbody>
+                </table>
+              </div>
+              <p id="client-distribution-delay-status" class="tracking-status" role="status" aria-live="polite"></p>
+            </section>
           </section>
           <section id="client-pod-signature-panel" class="rounded-box" hidden>
             <div class="card-header">
@@ -1103,14 +1216,27 @@
                 <button id="client-pod-submit-signature" class="btn btn-primary" type="submit">Sign and complete delivery</button>
               </div>
             </form>
-            <button id="client-pod-download" class="btn btn-secondary" type="button" hidden>Download signed proof of delivery</button>
+            <div class="workflow-actions">
+              <button id="client-pod-preview" class="btn btn-secondary" type="button" hidden>Preview signed proof of delivery</button>
+              <button id="client-pod-download" class="btn btn-secondary" type="button" hidden>Download signed proof of delivery</button>
+            </div>
             <p id="client-pod-status" class="tracking-status" role="status" aria-live="polite"></p>
             <section id="client-rating-panel" class="rounded-box" hidden>
               <h3>Rate your delivery</h3>
               <form id="client-rating-form" class="workflow-form">
                 <div class="field">
-                  <label for="client-rating-stars">Customer rating</label>
-                  <select id="client-rating-stars" required>
+                  <label for="client-rating-punctuality">Delivery punctuality</label>
+                  <select id="client-rating-punctuality" required>
+                    <option value="5">5 stars · Excellent</option>
+                    <option value="4">4 stars · Good</option>
+                    <option value="3">3 stars · Satisfactory</option>
+                    <option value="2">2 stars · Needs improvement</option>
+                    <option value="1">1 star · Poor</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="client-rating-cargo-care">Cargo care</label>
+                  <select id="client-rating-cargo-care" required>
                     <option value="5">5 stars · Excellent</option>
                     <option value="4">4 stars · Good</option>
                     <option value="3">3 stars · Satisfactory</option>
@@ -1126,6 +1252,37 @@
               </form>
               <p id="client-rating-status" class="tracking-status" role="status" aria-live="polite"></p>
             </section>
+          </section>
+          <section id="shipment-damage-claims-panel" class="rounded-box" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Damage claims and evidence</h2>
+                <p class="muted">The shipper and assigned driver can file or add timestamped photo evidence to the same shipment claim record.</p>
+              </div>
+            </div>
+            <form id="shipment-damage-claim-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field">
+                  <label for="damage-claim-line-item">Cargo line item</label>
+                  <select id="damage-claim-line-item"></select>
+                </div>
+                <div class="field">
+                  <label for="damage-claim-item-description">Item description (if not listed)</label>
+                  <input id="damage-claim-item-description" type="text" maxlength="300" />
+                </div>
+                <div class="field workflow-field-wide">
+                  <label for="damage-claim-details">Damage and condition details</label>
+                  <textarea id="damage-claim-details" rows="3" minlength="5" maxlength="2000" required></textarea>
+                </div>
+                <div class="field workflow-field-wide">
+                  <label for="damage-claim-photo">Photo evidence</label>
+                  <input id="damage-claim-photo" type="file" accept="image/jpeg,image/png,image/webp" required />
+                </div>
+              </div>
+              <button class="btn btn-primary" type="submit">File damage claim</button>
+            </form>
+            <p id="damage-claim-status" class="tracking-status" role="status" aria-live="polite"></p>
+            <div id="shipment-damage-claim-list" class="workflow-records" aria-live="polite"></div>
           </section>
           <section id="goods-document-upload-panel" class="rounded-box" hidden>
             <div class="card-header">
@@ -1168,6 +1325,37 @@
             <div id="shipment-document-list" class="workflow-records" aria-live="polite"></div>
           </section>
           <section id="driver-goods-workflow" class="rounded-box" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Trip photos and delay proof</h2>
+                <p class="muted">Upload POD photos before marking delivery complete. If traffic delays the trip, submit a time-stamped traffic screenshot with a short explanation; missing evidence can trigger a warning.</p>
+              </div>
+            </div>
+            <form id="shipment-operational-evidence-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field">
+                  <label for="operational-evidence-tracking">Shipment tracking number</label>
+                  <input id="operational-evidence-tracking" name="tracking_number" maxlength="40" required />
+                </div>
+                <div class="field">
+                  <label for="operational-evidence-type">Evidence type</label>
+                  <select id="operational-evidence-type" name="evidence_type" required>
+                    <option value="POD_PHOTO">Proof-of-delivery photo</option>
+                    <option value="TRAFFIC_PROOF">Traffic-delay proof</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="operational-evidence-image">Photo or screenshot</label>
+                  <input id="operational-evidence-image" name="image" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required />
+                </div>
+                <div class="field workflow-field-wide">
+                  <label for="operational-evidence-note">Notes</label>
+                  <input id="operational-evidence-note" name="note" maxlength="1000" placeholder="Required for traffic-delay proof" />
+                </div>
+              </div>
+              <button class="btn btn-primary" type="submit">Upload trip evidence</button>
+              <p id="operational-evidence-status" class="tracking-status" role="status" aria-live="polite"></p>
+            </form>
             <div class="card-header">
               <div>
                 <h2>Returned goods</h2>
@@ -1297,6 +1485,10 @@
                   <label for="request-customer-phone">Receiver phone</label>
                   <input id="request-customer-phone" type="tel" maxlength="40" required />
                 </div>
+                <div class="field">
+                  <label for="request-customer-email">Receiver email for secure tracking (optional)</label>
+                  <input id="request-customer-email" type="email" maxlength="254" autocomplete="email" />
+                </div>
                 <div class="field workflow-field-wide">
                   <label for="request-customer-address">End customer delivery address</label>
                   <input id="request-customer-address" type="text" maxlength="300" required />
@@ -1417,6 +1609,33 @@
               <div id="booking-quote-box" class="quote-box" role="status" aria-live="polite"></div>
             </form>
           </div>
+          <section id="transport-enquiries-panel" class="rounded-box" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Public transport enquiries</h2>
+                <p class="muted">Review new requests and record when your team has contacted the customer.</p>
+              </div>
+              <button id="refresh-transport-enquiries" class="btn btn-secondary" type="button">Refresh enquiries</button>
+            </div>
+            <p id="transport-enquiries-status" class="tracking-status" role="status" aria-live="polite"></p>
+            <div id="transport-enquiries-list" class="workflow-records"></div>
+          </section>
+          <section id="container-rate-admin" class="rounded-box" hidden>
+            <div class="card-header">
+              <div>
+                <h2>Container quote rates</h2>
+                <p class="muted">Set the fixed VAT-exclusive rate per container used in the quote calculator.</p>
+              </div>
+            </div>
+            <form id="container-rate-form" class="workflow-form">
+              <div class="workflow-grid">
+                <div class="field"><label for="container-rate-20ft">20 ft container rate (KES)</label><input id="container-rate-20ft" type="number" min="0.01" max="10000000" step="0.01" required /></div>
+                <div class="field"><label for="container-rate-40ft">40 ft container rate (KES)</label><input id="container-rate-40ft" type="number" min="0.01" max="10000000" step="0.01" required /></div>
+              </div>
+              <button class="btn btn-primary" type="submit">Save container rates</button>
+            </form>
+            <div id="container-rate-status" class="tracking-status" role="status" aria-live="polite"></div>
+          </section>
         </div>
 
         <div id="view-fleet" class="tab-view">
@@ -1424,6 +1643,87 @@
             <div class="card-header">
               <h3>Fleet Operations</h3>
             </div>
+            <section id="fleet-directory-panel" class="rounded-box" hidden>
+              <h2>Fleet directory</h2>
+              <p class="muted">Select a truck number to see its current documents, assigned driver and phone number.</p>
+              <div class="operations-table-wrap"><table class="table-grid"><thead><tr><th>Truck no.</th><th>Type</th><th>Status</th><th>Driver</th></tr></thead><tbody id="fleet-directory-rows"></tbody></table></div>
+              <p id="fleet-directory-status" class="tracking-status" role="status" aria-live="polite"></p>
+            </section>
+            <dialog id="vehicle-profile-modal" class="report-dialog" aria-labelledby="vehicle-profile-title">
+              <div class="report-dialog-header">
+                <div>
+                  <p class="profile-eyebrow">Vehicle profile</p>
+                  <h2 id="vehicle-profile-title">Truck</h2>
+                </div>
+                <button id="vehicle-profile-close" class="btn btn-secondary" type="button">Close</button>
+              </div>
+              <div id="vehicle-profile-body"></div>
+            </dialog>
+            <section id="fleet-certificates-panel" class="rounded-box" hidden>
+              <h2>Vehicle certificate compliance</h2>
+              <p class="muted">Green: more than 15 days remaining. Yellow: 6–15 days. Pulsing red: 5 days or fewer, expired, or missing. Red vehicles are blocked from new dispatches until an approved renewal is on file.</p>
+              <div id="fleet-certificate-vehicle-list" class="workforce-grid"></div>
+              <form id="fleet-certificate-upload-form" class="workflow-form">
+                <h3>Submit a renewed certificate photo</h3>
+                <div class="workflow-grid">
+                  <div class="field"><label for="fleet-certificate-vehicle">Assigned truck</label><select id="fleet-certificate-vehicle" required></select></div>
+                  <div class="field">
+                    <label for="fleet-certificate-type">Certificate</label>
+                    <select id="fleet-certificate-type" required>
+                      <option value="INSURANCE">Insurance</option>
+                      <option value="INSPECTION">Inspection</option>
+                      <option value="SPEED_GOVERNOR">Speed Governor</option>
+                    </select>
+                  </div>
+                  <div class="field"><label for="fleet-certificate-expires">New expiry date</label><input id="fleet-certificate-expires" type="date" required /></div>
+                  <div class="field"><label for="fleet-certificate-photo">Renewal photo</label><input id="fleet-certificate-photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required /></div>
+                </div>
+                <button class="btn btn-primary" type="submit">Submit for approval</button>
+                <p id="fleet-certificate-upload-status" class="tracking-status" role="status" aria-live="polite"></p>
+              </form>
+              <section id="fleet-certificate-review-panel" hidden>
+                <h3>Renewal approvals</h3>
+                <div id="fleet-certificate-pending-list" class="workforce-grid"></div>
+              </section>
+            </section>
+            <dialog id="fleet-certificate-hard-stop-modal" aria-labelledby="fleet-certificate-hard-stop-title">
+              <h2 id="fleet-certificate-hard-stop-title">Vehicle certificate hard stop</h2>
+              <p>A required truck certificate is missing, expired, or within five days of expiry. New trips are blocked until Fleet Admin approves current documents.</p>
+              <div id="fleet-certificate-hard-stop-details" class="workforce-grid"></div>
+              <div class="workflow-actions">
+                <a class="btn btn-primary" href="tel:0720778812">Call Fleet Admin</a>
+                <button id="fleet-certificate-hard-stop-review" class="btn btn-secondary" type="button">Upload renewal</button>
+                <button id="fleet-certificate-hard-stop-close" class="btn btn-secondary" type="button">Close and view safety actions</button>
+              </div>
+            </dialog>
+
+            <dialog id="shipment-pdf-preview-modal" class="shipment-pdf-preview" aria-labelledby="shipment-pdf-preview-title">
+              <header class="shipment-pdf-preview-header">
+                <h2 id="shipment-pdf-preview-title">Shipment PDF preview</h2>
+                <div class="workflow-actions">
+                  <a id="shipment-pdf-preview-download" class="btn btn-primary" download>Download to this device</a>
+                  <button id="shipment-pdf-preview-close" class="btn btn-secondary" type="button">Close preview</button>
+                </div>
+              </header>
+              <iframe id="shipment-pdf-preview-frame" title="Shipment PDF preview"></iframe>
+            </dialog>
+            <section id="fleet-mileage-panel" class="rounded-box" hidden>
+              <h2>Manage mileage</h2>
+              <p class="muted">Match each trip to its delivery: truck, shipment, kilometres covered, mileage amount issued and the accompanying turnman.</p>
+              <form id="fleet-mileage-form" class="workflow-form">
+                <div class="workflow-grid">
+                  <div class="field"><label for="fleet-mileage-vehicle">Truck</label><select id="fleet-mileage-vehicle" required></select></div>
+                  <div class="field"><label for="fleet-mileage-shipment">Shipment / delivery</label><select id="fleet-mileage-shipment" required><option value="">Select a shipment</option></select></div>
+                  <div class="field"><label for="fleet-mileage-distance">Distance (km)</label><input id="fleet-mileage-distance" type="number" min="0.1" step="0.1" required /></div>
+                  <div class="field"><label for="fleet-mileage-turnman">Turnman / accompanying staff (optional)</label><input id="fleet-mileage-turnman" maxlength="120" /></div>
+                  <div class="field"><label for="fleet-mileage-amount">Mileage amount issued (KES)</label><input id="fleet-mileage-amount" type="number" min="0" step="0.01" required /></div>
+                  <div class="field workflow-field-wide"><label for="fleet-mileage-notes">Notes</label><textarea id="fleet-mileage-notes" rows="2" maxlength="500"></textarea></div>
+                </div>
+                <button class="btn btn-primary" type="submit">Save trip mileage</button>
+              </form>
+              <p id="fleet-mileage-status" class="tracking-status" role="status" aria-live="polite"></p>
+              <div class="operations-table-wrap"><table class="table-grid"><thead><tr><th>Recorded</th><th>Truck</th><th>Shipment</th><th>Distance</th><th>Mileage amount issued</th><th>Driver</th><th>Turnman</th><th>Notes</th></tr></thead><tbody id="fleet-mileage-rows"></tbody></table></div>
+            </section>
             <div id="client-tabs" style="display:flex; gap:8px; margin-bottom: 16px;">
               <button type="button" class="tab-btn active" data-group="client" data-tab="fleet-overview">Overview</button>
               <button type="button" class="tab-btn" data-group="client" data-tab="fleet-maintenance">Maintenance</button>
@@ -1468,6 +1768,11 @@
               <h3>Finance & Accounts</h3>
             </div>
             <p class="muted finance-intro">Review delivery invoices, record partial payments, and track outstanding balances. Marking a delivery paid records the full invoice amount.</p>
+            <form id="finance-statement-form" class="workflow-actions">
+              <label for="finance-statement-month">Monthly statement</label>
+              <input id="finance-statement-month" name="month" type="month" required />
+              <button class="btn btn-secondary" type="submit">Download statement & wait-time report</button>
+            </form>
             <div class="finance-summary" aria-live="polite">
               <article class="finance-summary-card">
                 <span>Paid deliveries</span>
@@ -1545,53 +1850,50 @@
                     <label for="assignment-driver">Assigned driver</label>
                     <select id="assignment-driver" required></select>
                   </div>
+                  <div class="field">
+                    <label for="assignment-detention-rate">Detention rate (KES per hour, before VAT)</label>
+                    <input id="assignment-detention-rate" type="number" min="0" max="1000000" step="0.01" value="0" required />
+                    <small>Set the agreed contract rate before dispatch. Detention VAT is added at 16% on the invoice; zero means no detention fee.</small>
+                  </div>
                 </div>
                 <button class="btn btn-primary" type="submit">Save shipment assignment</button>
-              </form>
-              <div class="rounded-box">
-                <h3>Destination rate-sheet import</h3>
-                <p class="muted">Upload an .xlsx or PDF with columns: origin, destination, truck_type, flat_rate_kes. PDF tables should use one pipe-separated rate per line. Rates are previewed for review before they affect quotes; the flat rate is before VAT.</p>
-                <form id="destination-rates-upload-form" class="workflow-form">
-                  <div class="field"><label for="destination-rates-file">Excel or PDF rate sheet</label><input id="destination-rates-file" type="file" accept=".xlsx,.pdf,application/pdf" required /></div>
-                  <button id="destination-rates-preview-button" class="btn btn-secondary" type="submit">Preview extracted rates</button>
-                </form>
-                <p id="destination-rates-status" class="tracking-status" role="status" aria-live="polite"></p>
-                <div class="operations-table-wrap">
-                  <table class="table-grid">
-                    <thead><tr><th>Row</th><th>Origin</th><th>Destination</th><th>Truck</th><th>Rate before VAT (KES)</th><th>Review</th></tr></thead>
-                    <tbody id="destination-rates-preview"></tbody>
-                  </table>
-                </div>
-                <button id="destination-rates-import-button" class="btn btn-primary" type="button" hidden>Confirm and apply valid rates</button>
-                <h4>Currently applied destination rates</h4>
-                <div id="destination-rates-current" class="workflow-records"></div>
-              </div>
-              <form id="account-role-form" class="workflow-form tracking-role-form">
-                <div class="workflow-grid">
-                  <div class="field">
-                    <label for="account-role-user">Account</label>
-                    <select id="account-role-user" required></select>
-                  </div>
-                  <div class="field">
-                    <label for="account-role-value">Portal role</label>
-                    <select id="account-role-value" required>
-                      <option value="client">Client</option>
-                      <option value="driver">Driver</option>
-                      <option value="accountant">Accounts</option>
-                      <option value="admin">Admin</option>
-                      <option value="hr">HR</option>
-                      <option value="boss">Boss</option>
-                      <option value="mechanic">Mechanic</option>
-                    </select>
-                  </div>
-                  <div id="driver-name-field" class="field" hidden>
-                    <label for="account-driver-name">Employee display name</label>
-                    <input id="account-driver-name" type="text" maxlength="120" />
-                  </div>
-                </div>
-                <button class="btn btn-secondary" type="submit">Update account role</button>
+                <button id="assignment-auto-match-button" class="btn btn-secondary" type="button">Auto-match nearest eligible driver</button>
+                <details class="workflow-field-wide">
+                  <summary>See an auto-match example</summary>
+                  <p class="muted">Sample shipment: 12 tonnes, 15-ton truck, pickup at Athi River. A driver 4 km away with a GPS update from 5 minutes ago is selected ahead of a compatible driver 480 km away. A driver 1 km away with a GPS update older than 30 minutes is excluded. Real matching also checks active driver status, vehicle capacity/type, approved fleet certificates, and whether the driver has an active trip.</p>
+                </details>
+                <p class="muted">The shipment card includes trip BOL (with a QR code), a secure customer tracking link, and customer-email delivery when configured.</p>
               </form>
               <div id="tracking-admin-status" class="tracking-status" role="status" aria-live="polite"></div>
+            </section>
+            <section id="shipment-geofence-panel" class="rounded-box" hidden>
+              <h3>Pickup / delivery geofence and detention clock</h3>
+              <p class="muted">Record arrival and departure using device GPS within 750 m of the configured freight-hub geofence. Detention accrues at the assigned contract rate for actual time on site.</p>
+              <form id="shipment-geofence-form" class="workflow-form">
+                <div class="workflow-grid">
+                  <div class="field"><label for="geofence-shipment">Assigned shipment</label><select id="geofence-shipment" required></select></div>
+                  <div class="field"><label for="geofence-site">Site</label><select id="geofence-site" required><option value="PICKUP">Pickup hub</option><option value="DESTINATION">Delivery hub</option></select></div>
+                  <div class="field"><label for="geofence-event">Event</label><select id="geofence-event" required><option value="ARRIVE">Arrival — start detention clock</option><option value="DEPART">Departure — stop detention clock</option></select></div>
+                </div>
+                <button id="geofence-submit" class="btn btn-primary" type="submit">Use GPS and record event</button>
+              </form>
+              <p id="shipment-geofence-status" class="tracking-status" role="status" aria-live="polite"></p>
+            </section>
+            <section id="driver-load-board-panel" class="rounded-box" hidden aria-labelledby="driver-load-board-heading">
+              <div class="card-header">
+                <div>
+                  <h2 id="driver-load-board-heading">Compatible loads and backhauls</h2>
+                  <p class="muted">Loads are filtered by your assigned truck type and capacity. Share your location only when you want proximity sorting; it expires after 30 minutes.</p>
+                </div>
+              </div>
+              <div class="workflow-actions">
+                <button id="driver-load-board-share-location" class="btn btn-secondary" type="button">Share GPS and find nearby loads</button>
+                <button id="driver-load-board-refresh" class="btn btn-secondary" type="button">Refresh loads</button>
+                <button id="driver-scan-bol-button" class="btn btn-secondary" type="button">Scan assigned trip BOL QR</button>
+              </div>
+              <video id="driver-bol-camera" class="driver-bol-camera" autoplay playsinline muted hidden aria-label="Camera view for scanning a trip BOL QR code"></video>
+              <p id="driver-load-board-status" class="tracking-status" role="status" aria-live="polite"></p>
+              <div id="driver-load-board-list" class="shipment-accessible-list" aria-live="polite"></div>
             </section>
             <section id="client-in-transit-panel" class="rounded-box" hidden aria-labelledby="client-in-transit-heading">
               <div class="card-header">
@@ -1629,6 +1931,7 @@
     <script src="js/employeePortal.js"></script>
     <script src="js/transportEnquiry.js"></script>
     <script src="js/workforce.js"></script>
+    <script src="js/vehicleProfile.js"></script>
     <script src="js/fleetMaintenance.js"></script>
     <script src="js/financePortal.js"></script>
     <script src="js/clientCommunications.js"></script>
@@ -1804,7 +2107,7 @@
 
       async function refreshSessionUser(session) {
         try {
-          const response = await fetch('http://localhost:5000/api/auth/me', {
+          const response = await fetch(window.DifanApp.apiUrl('/api/auth/me'), {
             headers: { Authorization: `Bearer ${session.token}` }
           });
           const data = await response.json();
@@ -1878,7 +2181,7 @@
         const role = loginRole.value;
 
         try {
-          const response = await fetch('http://localhost:5000/api/auth/login', {
+          const response = await fetch(window.DifanApp.apiUrl('/api/auth/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password, role })
@@ -1934,7 +2237,7 @@
           return;
         }
         try {
-          const response = await fetch('http://localhost:5000/api/auth/change-password', {
+          const response = await fetch(window.DifanApp.apiUrl('/api/auth/change-password'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

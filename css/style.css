@@ -75,6 +75,40 @@ a:hover {
     padding: 16px 32px;
 }
 
+.shipment-pdf-preview {
+    width: min(1100px, 94vw);
+    height: min(900px, 92vh);
+    max-width: 94vw;
+    max-height: 92vh;
+    padding: 0;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-soft-cream);
+}
+
+.shipment-pdf-preview::backdrop {
+    background: rgba(17, 30, 46, 0.72);
+}
+
+.shipment-pdf-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.shipment-pdf-preview-header h2 {
+    font-size: 1.2rem;
+}
+
+.shipment-pdf-preview iframe {
+    display: block;
+    width: 100%;
+    height: calc(100% - 82px);
+    border: 0;
+    background: white;
+}
+
 .header-top {
     max-width: 1200px;
     margin: 0 auto;
@@ -899,6 +933,48 @@ tr:hover td {
     padding: 8px 12px;
 }
 
+.fleet-certificate-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0;
+}
+
+.fleet-certificate-dot {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 12px;
+    border-radius: 50%;
+    background: #168447;
+}
+
+.fleet-certificate-dot--YELLOW {
+    background: #e4aa27;
+}
+
+.fleet-certificate-dot--RED {
+    background: #c93232;
+    animation: fleet-certificate-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes fleet-certificate-pulse {
+    50% { opacity: 0.35; box-shadow: 0 0 0 6px rgb(201 50 50 / 18%); }
+}
+
+#fleet-certificate-hard-stop-modal {
+    width: min(620px, calc(100% - 32px));
+    max-height: 85vh;
+    overflow: auto;
+    padding: 24px;
+    color: var(--color-slate-ink);
+    background: var(--color-soft-cream);
+    border: 1px solid var(--color-border-subtle);
+}
+
+#fleet-certificate-hard-stop-modal::backdrop {
+    background: rgb(19 28 24 / 72%);
+}
+
 .workflow-status {
     display: inline-block;
     padding: 3px 9px;
@@ -963,6 +1039,19 @@ tr:hover td {
     background: var(--color-soft-cream);
     border: 1px solid var(--color-border-subtle);
     border-left: 3px solid var(--color-antique-brass);
+}
+
+.driver-bol-camera {
+  display: block;
+  width: min(100%, 560px);
+  max-height: 360px;
+  margin: 12px 0;
+  border-radius: 6px;
+  background: #101714;
+}
+
+.driver-bol-camera[hidden] {
+  display: none;
 }
 
 .shipment-access-card p {
@@ -1394,3 +1483,17 @@ tr:hover td {
         flex-direction: column;
     }
 }
+.report-progress { margin: 0.75rem 0; }
+.report-progress-bar { height: 10px; border-radius: 999px; background: rgba(148, 163, 184, 0.3); overflow: hidden; }
+.report-progress-fill { height: 100%; border-radius: 999px; background: #2563eb; transition: width 0.3s ease; }
+.report-progress-fill[data-status="INVESTIGATING"] { background: #d97706; }
+.report-progress-fill[data-status="ACTION_TAKEN"] { background: #7c3aed; }
+.report-progress-fill[data-status="CLOSED"] { background: #16a34a; }
+.report-progress-steps { display: flex; justify-content: space-between; gap: 0.25rem; margin: 0.4rem 0 0; padding: 0; list-style: none; font-size: 0.75rem; opacity: 0.65; }
+.report-progress-steps .done { opacity: 0.9; }
+.report-progress-steps .current { font-weight: 700; opacity: 1; }
+.report-progress-lookup { display: grid; gap: 0.5rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(148, 163, 184, 0.3); }
+.report-status-controls { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem; }
+
+.vehicle-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; color: #2563eb; text-decoration: underline; cursor: pointer; }
+.vehicle-link:hover, .vehicle-link:focus-visible { color: #1d4ed8; }

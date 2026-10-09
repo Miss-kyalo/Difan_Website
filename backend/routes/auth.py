@@ -1,3 +1,5 @@
+import json
+import re
 import secrets
 from datetime import datetime, timezone
 
@@ -19,6 +21,44 @@ EMPLOYEE_ROLES = {'driver', 'mechanic', 'accountant', 'admin', 'hr', 'boss'}
 
 class MailDeliveryError(Exception):
     pass
+
+
+STATUTORY_FIELDS = {
+    'kra_pin': ('KRA PIN', re.compile(r'[A-Z][0-9]{9}[A-Z]')),
+    'nssf_number': ('NSSF number', re.compile(r'[A-Z0-9-]{4,20}')),
+    'shif_number': ('SHIF number', re.compile(r'[A-Z0-9-]{4,20}')),
+}
+
+
+def statutory_dict(account):
+    return {field: getattr(account, field) for field in STATUTORY_FIELDS}
+
+
+def apply_statutory_details(account, data):
+    cleaned = {}
+    for field, (label, pattern) in STATUTORY_FIELDS.items():
+        if field not in data:
+            continue
+        value = data[field]
+        if value is None or (isinstance(value, str) and not value.strip()):
+            cleaned[field] = None
+            continue
+        if not isinstance(value, str) or not pattern.fullmatch(value.strip().upper()):
+            raise ValueError(f'Enter a valid {label}.')
+        cleaned[field] = value.strip().upper()
+    for field, value in cleaned.items():
+        setattr(account, field, value)
+
+
+PHONE_PATTERN = re.compile(r'[+0-9() .-]{7,40}')
+
+
+def normalize_phone(value):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if not isinstance(value, str) or not PHONE_PATTERN.fullmatch(value.strip()):
+        raise ValueError('Enter a valid phone number.')
+    return value.strip()
 
 
 def request_data():
@@ -50,6 +90,18 @@ class UserAccount(db.Model):
     employment_status_updated_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=True)
     leaderboard_opt_in = db.Column(db.Boolean, nullable=False, default=False)
     leaderboard_handle = db.Column(db.String(40), nullable=True)
+    ui_preferences = db.Column(db.Text, nullable=True)
+    phone = db.Column(db.String(40), nullable=True)
+    kra_pin = db.Column(db.String(11), nullable=True)
+    nssf_number = db.Column(db.String(20), nullable=True)
+    shif_number = db.Column(db.String(20), nullable=True)
+
+    def get_preferences(self):
+        try:
+            value = json.loads(self.ui_preferences or '{}')
+        except ValueError:
+            return {}
+        return value if isinstance(value, dict) else {}
 
     def set_password(self, password):
         self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
@@ -75,6 +127,8 @@ class UserAccount(db.Model):
             'driver_code': self.driver_code,
             'leaderboard_opt_in': self.leaderboard_opt_in,
             'leaderboard_handle': self.leaderboard_handle,
+            'preferences': self.get_preferences(),
+            'phone': self.phone,
         }
 
 
@@ -231,6 +285,39 @@ def get_current_user():
     return jsonify({'status': 'success', 'user': user.to_dict()}), 200
 
 
+PREFERENCE_STRING_KEYS = ('active_tab', 'theme', 'language')
+MAX_PREFERENCE_VALUE_LENGTH = 80
+
+
+def clean_preferences(payload):
+    cleaned = {}
+    for key in PREFERENCE_STRING_KEYS:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            cleaned[key] = value.strip()[:MAX_PREFERENCE_VALUE_LENGTH]
+    sub_tabs = payload.get('sub_tabs')
+    if isinstance(sub_tabs, dict):
+        cleaned['sub_tabs'] = {
+            str(group)[:MAX_PREFERENCE_VALUE_LENGTH]: str(tab)[:MAX_PREFERENCE_VALUE_LENGTH]
+            for group, tab in list(sub_tabs.items())[:20]
+            if isinstance(tab, str) and tab.strip()
+        }
+    return cleaned
+
+
+@auth_bp.route('/auth/preferences', methods=['GET', 'PUT'])
+@jwt_required()
+def user_preferences():
+    user = db.session.get(UserAccount, int(get_jwt_identity()))
+    if not user or user.account_status != 'active':
+        return jsonify({'status': 'error', 'message': 'This account is not active.'}), 403
+    if request.method == 'PUT':
+        merged = {**user.get_preferences(), **clean_preferences(request_data())}
+        user.ui_preferences = json.dumps(merged)
+        db.session.commit()
+    return jsonify({'status': 'success', 'preferences': user.get_preferences()}), 200
+
+
 @jwt.token_verification_loader
 def allow_forced_password_change_only(header, payload):
     if not payload.get('must_change_password'):
@@ -245,6 +332,58 @@ def reject_forced_password_change(header, payload):
         'message': 'Change your temporary password before accessing the portal.',
         'must_change_password': True,
     }), 403
+
+
+@auth_bp.route('/auth/profile', methods=['PATCH'])
+@jwt_required()
+def update_profile():
+    user = db.session.get(UserAccount, int(get_jwt_identity()))
+    if not user or user.account_status != 'active':
+        return jsonify({'status': 'error', 'message': 'This account is not active.'}), 403
+    try:
+        user.phone = normalize_phone(request_data().get('phone'))
+    except ValueError as error:
+        return jsonify({'status': 'error', 'message': str(error)}), 400
+    db.session.commit()
+    return jsonify({'status': 'success', 'user': user.to_dict()}), 200
+
+
+def statutory_response(account, data=None):
+    if data is not None:
+        try:
+            apply_statutory_details(account, data)
+        except ValueError as error:
+            return jsonify({'status': 'error', 'message': str(error)}), 400
+        db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'employee': {
+            'id': account.id,
+            'name': account.display_name or account.driver_name or account.email,
+            **statutory_dict(account),
+        },
+    }), 200
+
+
+@auth_bp.route('/auth/employee-details', methods=['GET', 'PATCH'])
+@jwt_required()
+def own_employee_details():
+    user = db.session.get(UserAccount, int(get_jwt_identity()))
+    if not user or user.account_status != 'active' or user.role not in EMPLOYEE_ROLES:
+        return jsonify({'status': 'error', 'message': 'Employee details are not available for this account.'}), 403
+    return statutory_response(user, request_data() if request.method == 'PATCH' else None)
+
+
+@auth_bp.route('/auth/users/<int:user_id>/employee-details', methods=['GET', 'PATCH'])
+@jwt_required()
+def employee_details_for_admin(user_id):
+    admin = require_admin_or_hr()
+    if not admin or admin.role not in ADMIN_ROLES:
+        return jsonify({'status': 'error', 'message': 'Admin access is required.'}), 403
+    account = db.session.get(UserAccount, user_id)
+    if not account or account.role not in EMPLOYEE_ROLES:
+        return jsonify({'status': 'error', 'message': 'Employee was not found.'}), 404
+    return statutory_response(account, request_data() if request.method == 'PATCH' else None)
 
 
 @auth_bp.route('/auth/change-password', methods=['POST'])
@@ -399,6 +538,10 @@ def create_user():
         return jsonify({'status': 'error', 'message': 'Only the Boss can create a Boss account.'}), 403
     if role in EMPLOYEE_ROLES and not display_name:
         return jsonify({'status': 'error', 'message': 'An employee display name is required for this role.'}), 400
+    try:
+        phone = normalize_phone(data.get('phone'))
+    except ValueError as error:
+        return jsonify({'status': 'error', 'message': str(error)}), 400
     if UserAccount.query.filter_by(email=email).first():
         return jsonify({'status': 'error', 'message': 'An account with this email already exists.'}), 409
 
@@ -409,6 +552,7 @@ def create_user():
     account.role = role
     account.driver_name = display_name if role == 'driver' else None
     account.display_name = display_name or None
+    account.phone = phone
     account.account_status = 'active'
     account.approved_by_id = admin.id
     account.approved_at = datetime.now(timezone.utc)

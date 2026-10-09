@@ -1,5 +1,7 @@
 import base64
 import binascii
+import hashlib
+import hmac
 import io
 import json
 import math
@@ -10,12 +12,16 @@ import secrets
 import uuid
 import zipfile
 import xml.etree.ElementTree as ElementTree
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from threading import Lock
+from urllib.parse import quote, urlsplit
 
+import httpx
 import numpy as np
 import pymupdf as fitz
+import qrcode
+from cryptography.fernet import Fernet, InvalidToken
 from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
@@ -74,7 +80,12 @@ class Shipment(db.Model):
     end_customer_name = db.Column(db.String(200), nullable=True)
     end_customer_address = db.Column(db.String(300), nullable=True)
     end_customer_phone = db.Column(db.String(40), nullable=True)
+    end_customer_email = db.Column(db.String(254), nullable=True)
+    public_tracking_token_hash = db.Column(db.String(64), nullable=True, unique=True, index=True)
+    public_tracking_token_ciphertext = db.Column(db.String(255), nullable=True)
+    public_tracking_expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
     quoted_amount_kes = db.Column(db.Float, nullable=True)
+    detention_rate_kes_per_hour = db.Column(db.Float, nullable=False, default=0)
     destination_change_request = db.Column(db.Text, nullable=True)
     assigned_driver = db.relationship('UserAccount', foreign_keys=[assigned_driver_id])
     client_account = db.relationship('UserAccount', foreign_keys=[client_user_id])
@@ -95,6 +106,8 @@ class Shipment(db.Model):
         proof_of_delivery = ShipmentProofOfDelivery.query.filter_by(
             shipment_tracking_number=self.tracking_number,
         ).first()
+        detention_charges = round(detention_total(self), 2)
+        detention_vat = round(detention_charges * 0.16, 2)
         return {
             'tracking_number': self.tracking_number,
             'status': self.status,
@@ -106,7 +119,10 @@ class Shipment(db.Model):
             'breakdown_alert': self.breakdown_alert,
             'company_name': self.company_name,
             'client_user_id': self.client_user_id,
-            'assigned_driver_name': self.assigned_driver.driver_name if self.assigned_driver else None,
+            'assigned_driver_name': (
+                self.assigned_driver.display_name or self.assigned_driver.driver_name or self.assigned_driver.email
+                if self.assigned_driver else None
+            ),
             'destination_verified': any(document.destination_validated for document in documents),
             'departed_at': self.departed_at.isoformat() if self.departed_at else None,
             'arrived_at': self.arrived_at.isoformat() if self.arrived_at else None,
@@ -117,7 +133,24 @@ class Shipment(db.Model):
             'end_customer_name': self.end_customer_name,
             'end_customer_address': self.end_customer_address,
             'end_customer_phone': self.end_customer_phone,
+            'end_customer_email': self.end_customer_email,
             'quoted_amount_kes': self.quoted_amount_kes,
+            'detention_rate_kes_per_hour': self.detention_rate_kes_per_hour,
+            'detention_charges_kes': detention_charges,
+            'detention_vat_kes': detention_vat,
+            'invoice_total_kes': round((self.quoted_amount_kes or 0) + detention_charges + detention_vat, 2),
+            'geofence_events': [
+                {
+                    'site_type': event.site_type,
+                    'event_type': event.event_type,
+                    'facility_name': event.facility_name,
+                    'recorded_at': event.recorded_at.isoformat(),
+                    'accuracy_m': event.accuracy_m,
+                }
+                for event in ShipmentGeofenceEvent.query.filter_by(
+                    shipment_tracking_number=self.tracking_number,
+                ).order_by(ShipmentGeofenceEvent.recorded_at, ShipmentGeofenceEvent.id).all()
+            ],
             'destination_change_pending': bool(self.destination_change_request),
             'destination_change': destination_change,
             'pod_signed_at': proof_of_delivery.signed_at.isoformat() if proof_of_delivery else None,
@@ -128,6 +161,7 @@ class Shipment(db.Model):
             ),
             'deliveries': [
                 {
+                    'id': delivery.id,
                     'delivery_number': delivery.delivery_number,
                     'goods_description': delivery.goods_description,
                     'customer_name': delivery.customer_name,
@@ -135,6 +169,48 @@ class Shipment(db.Model):
                 }
                 for delivery in deliveries
             ],
+        }
+
+
+class DriverLocation(db.Model):
+    __tablename__ = 'driver_locations'
+
+    driver_id = db.Column(
+        db.Integer, db.ForeignKey('user_accounts.id'), primary_key=True,
+    )
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+    accuracy_m = db.Column(db.Float, nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
+
+
+class ClientDestinationRate(db.Model):
+    __tablename__ = 'client_destination_rates'
+    __table_args__ = (
+        db.UniqueConstraint('client_user_id', 'origin', 'destination', 'truck_type', name='uq_client_destination_rate'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_user_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=False, index=True)
+    origin = db.Column(db.String(160), nullable=False)
+    destination = db.Column(db.String(160), nullable=False)
+    truck_type = db.Column(db.String(20), nullable=False)
+    flat_rate_kes = db.Column(db.Float, nullable=False)
+    source_filename = db.Column(db.String(255), nullable=False)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=False)
+    imported_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'client_user_id': self.client_user_id,
+            'origin': self.origin,
+            'destination': self.destination,
+            'truck_type': self.truck_type,
+            'truck_name': TRUCK_TYPES[self.truck_type]['name'],
+            'flat_rate_kes': self.flat_rate_kes,
+            'source_filename': self.source_filename,
+            'imported_at': self.imported_at.isoformat(),
         }
 
 
@@ -201,6 +277,36 @@ class ShipmentDocument(db.Model):
     deliveries = db.relationship('ShipmentDelivery', backref='source_document', lazy=True, cascade='all, delete-orphan')
 
 
+class ShipmentOperationalEvidence(db.Model):
+    __tablename__ = 'shipment_operational_evidence'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    shipment_tracking_number = db.Column(
+        db.String(40), db.ForeignKey('shipments.tracking_number'), nullable=False, index=True,
+    )
+    evidence_type = db.Column(db.String(24), nullable=False, index=True)
+    filename = db.Column(db.String(255), nullable=False)
+    contents = db.Column(db.LargeBinary, nullable=False)
+    sha256 = db.Column(db.String(64), nullable=False)
+    note = db.Column(db.String(1000), nullable=True)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=False)
+    uploaded_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    uploaded_by = db.relationship('UserAccount', foreign_keys=[uploaded_by_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'evidence_type': self.evidence_type,
+            'filename': self.filename,
+            'sha256': self.sha256,
+            'note': self.note,
+            'uploaded_at': self.uploaded_at.isoformat(),
+            'download_url': (
+                f'/api/shipments/{self.shipment_tracking_number}/operational-evidence/{self.id}'
+            ),
+        }
+
+
 class ShipmentDelivery(db.Model):
     __tablename__ = 'shipment_deliveries'
 
@@ -214,6 +320,111 @@ class ShipmentDelivery(db.Model):
     customer_name = db.Column(db.String(200), nullable=True)
     destination = db.Column(db.String(300), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class ShipmentGeofenceEvent(db.Model):
+    __tablename__ = 'shipment_geofence_events'
+
+    id = db.Column(db.Integer, primary_key=True)
+    shipment_tracking_number = db.Column(
+        db.String(40), db.ForeignKey('shipments.tracking_number'), nullable=False, index=True,
+    )
+    site_type = db.Column(db.String(16), nullable=False)
+    event_type = db.Column(db.String(16), nullable=False)
+    facility_name = db.Column(db.String(160), nullable=False)
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+    accuracy_m = db.Column(db.Float, nullable=True)
+    recorded_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=False)
+    recorded_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    recorded_by = db.relationship('UserAccount', foreign_keys=[recorded_by_id])
+
+
+class ShipmentDamageClaim(db.Model):
+    __tablename__ = 'shipment_damage_claims'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    shipment_tracking_number = db.Column(
+        db.String(40), db.ForeignKey('shipments.tracking_number'), nullable=False, index=True,
+    )
+    line_item_id = db.Column(db.Integer, db.ForeignKey('shipment_deliveries.id'), nullable=True)
+    line_item_description = db.Column(db.String(300), nullable=False)
+    details = db.Column(db.String(2000), nullable=False)
+    filed_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=False)
+    filed_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    filed_by = db.relationship('UserAccount', foreign_keys=[filed_by_id])
+    line_item = db.relationship('ShipmentDelivery', foreign_keys=[line_item_id])
+    evidence = db.relationship(
+        'ShipmentDamageEvidence', backref='claim', lazy=True, cascade='all, delete-orphan',
+        order_by='ShipmentDamageEvidence.uploaded_at',
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'tracking_number': self.shipment_tracking_number,
+            'line_item_id': self.line_item_id,
+            'line_item_description': self.line_item_description,
+            'details': self.details,
+            'filed_by': self.filed_by.display_name or self.filed_by.driver_name or self.filed_by.email,
+            'filed_by_role': self.filed_by.role,
+            'filed_at': self.filed_at.isoformat(),
+            'evidence': [item.to_dict() for item in self.evidence],
+        }
+
+
+class ShipmentDamageEvidence(db.Model):
+    __tablename__ = 'shipment_damage_evidence'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    claim_id = db.Column(db.String(36), db.ForeignKey('shipment_damage_claims.id'), nullable=False, index=True)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=False)
+    filename = db.Column(db.String(180), nullable=False)
+    mime_type = db.Column(db.String(40), nullable=False)
+    contents = db.Column(db.LargeBinary, nullable=False)
+    sha256 = db.Column(db.String(64), nullable=False)
+    uploaded_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    uploaded_by = db.relationship('UserAccount', foreign_keys=[uploaded_by_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'filename': self.filename,
+            'mime_type': self.mime_type,
+            'sha256': self.sha256,
+            'uploaded_at': self.uploaded_at.isoformat(),
+            'download_url': f'/api/shipments/claims/evidence/{self.id}',
+        }
+
+
+def detention_total(shipment, now=None):
+    events = ShipmentGeofenceEvent.query.filter_by(
+        shipment_tracking_number=shipment.tracking_number,
+    ).order_by(ShipmentGeofenceEvent.recorded_at, ShipmentGeofenceEvent.id).all()
+    open_arrivals = {}
+    total_hours = 0.0
+    current_time = now or datetime.now(timezone.utc)
+    for event in events:
+        recorded_at = event.recorded_at
+        if recorded_at.tzinfo is None:
+            recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+        key = event.site_type
+        if event.event_type == 'ARRIVE':
+            open_arrivals[key] = recorded_at
+        elif event.event_type == 'DEPART' and key in open_arrivals:
+            total_hours += max(0.0, (recorded_at - open_arrivals.pop(key)).total_seconds() / 3600)
+    total_hours += sum(
+        max(0.0, (current_time - arrived_at).total_seconds() / 3600)
+        for arrived_at in open_arrivals.values()
+    )
+    return total_hours * (shipment.detention_rate_kes_per_hour or 0)
+
+
+def detention_invoice_amount(shipment):
+    detention = round(detention_total(shipment), 2)
+    detention_vat = round(detention * 0.16, 2)
+    base = shipment.quoted_amount_kes or 0
+    return round(base + detention + detention_vat, 2), detention, detention_vat
 
 
 def seed_demo_shipment():
@@ -255,7 +466,213 @@ def shipment_visible_to(shipment, user):
     return False
 
 
-def route_quote(origin, destination, truck_type, tonnage):
+def create_public_tracking_link(shipment):
+    now = datetime.now(timezone.utc)
+    secret = current_app.config.get('SECRET_KEY')
+    if not isinstance(secret, str) or not secret:
+        raise RuntimeError('A stable application secret is required for customer tracking links.')
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode('utf-8')).digest())
+    cipher = Fernet(key)
+    expiry = shipment.public_tracking_expires_at
+    if expiry and expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    if (
+        shipment.public_tracking_token_hash
+        and shipment.public_tracking_token_ciphertext
+        and expiry
+        and expiry > now
+    ):
+        try:
+            token = cipher.decrypt(
+                shipment.public_tracking_token_ciphertext.encode('ascii'),
+            ).decode('ascii')
+            if hmac.compare_digest(
+                hashlib.sha256(token.encode('utf-8')).hexdigest(),
+                shipment.public_tracking_token_hash,
+            ):
+                base_url = public_application_base_url()
+                return f'{base_url}/tracking.html?token={quote(token)}'
+        except (InvalidToken, UnicodeDecodeError):
+            pass
+
+    token = secrets.token_urlsafe(32)
+    delivery_window = shipment.delivery_due_at
+    if delivery_window and delivery_window.tzinfo is None:
+        delivery_window = delivery_window.replace(tzinfo=timezone.utc)
+    minimum_expiry = now + timedelta(days=30)
+    schedule_expiry = (delivery_window + timedelta(days=7)) if delivery_window else minimum_expiry
+    expiry = max(minimum_expiry, schedule_expiry)
+    shipment.public_tracking_token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    shipment.public_tracking_token_ciphertext = cipher.encrypt(token.encode('ascii')).decode('ascii')
+    shipment.public_tracking_expires_at = expiry
+    base_url = public_application_base_url()
+    return f'{base_url}/tracking.html?token={quote(token)}'
+
+
+def public_application_base_url():
+    base_url = (
+        current_app.config.get('PUBLIC_APP_URL')
+        or request.headers.get('Origin')
+        or request.host_url
+    ).strip().rstrip('/')
+    parsed = urlsplit(base_url)
+    if (
+        parsed.scheme not in {'http', 'https'}
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError('PUBLIC_APP_URL must be an HTTP(S) origin without a path.')
+    return base_url
+
+
+def send_shipment_email(recipients, subject, message, attachment=None, attachment_name=None):
+    api_key = current_app.config.get('SENDGRID_API_KEY')
+    sender = current_app.config.get('MAIL_FROM_EMAIL')
+    if not api_key or not sender:
+        return {
+            'status': 'not_sent',
+            'message': 'Email delivery is not configured. Set SENDGRID_API_KEY and MAIL_FROM_EMAIL.',
+        }
+    recipients = list(dict.fromkeys(email for email in recipients if email))
+    if not recipients:
+        return {'status': 'not_sent', 'message': 'No recipient email address is on file.'}
+
+    payload = {
+        'personalizations': [{'to': [{'email': email}]} for email in recipients],
+        'from': {'email': sender},
+        'subject': subject,
+        'content': [{'type': 'text/plain', 'value': message}],
+    }
+    if attachment is not None:
+        payload['attachments'] = [{
+            'content': base64.b64encode(attachment).decode('ascii'),
+            'type': 'application/pdf',
+            'filename': attachment_name,
+            'disposition': 'attachment',
+        }]
+    try:
+        response = httpx.post(
+            'https://api.sendgrid.com/v3/mail/send',
+            headers={'Authorization': f'Bearer {api_key}'},
+            json=payload,
+            timeout=10,
+        )
+    except httpx.HTTPError:
+        current_app.logger.exception('Shipment email delivery failed for a shipment notification.')
+        return {
+            'status': 'failed',
+            'message': 'Email delivery failed. Retry the notification from the shipment portal.',
+        }
+    if response.status_code != 202:
+        current_app.logger.error(
+            'Shipment email provider rejected a notification with HTTP %s.',
+            response.status_code,
+        )
+        return {
+            'status': 'failed',
+            'message': 'The email provider rejected delivery. Check email configuration.',
+        }
+    return {'status': 'sent', 'message': 'Email delivered successfully.'}
+
+
+def send_customer_tracking_email(shipment, tracking_url):
+    if not shipment.end_customer_email:
+        return {'status': 'not_sent', 'message': 'No end-customer email address is on file.'}
+    message = (
+        f'Hello {shipment.end_customer_name or "Customer"},\n\n'
+        f'Your delivery from {shipment.company_name or "Difan Logistics"} is being handled by Difan Logistics.\n'
+        f'Reference: {shipment.tracking_number}\n'
+        f'Route: {shipment.origin} to {shipment.destination}\n\n'
+        f'View shipment updates securely: {tracking_url}\n'
+    )
+    notification = send_shipment_email(
+        [shipment.end_customer_email],
+        f'Difan delivery tracking — {shipment.tracking_number}',
+        message,
+    )
+    if notification['status'] == 'sent':
+        notification['message'] = 'Secure tracking link emailed to the end customer.'
+    elif notification['status'] == 'failed':
+        notification['message'] = f"Tracking link was created, but {notification['message'].lower()}"
+    else:
+        notification['message'] = f"Tracking link was not emailed: {notification['message']}"
+    return notification
+
+
+def send_driver_assignment_email(shipment):
+    driver = shipment.assigned_driver
+    if not driver or not driver.email:
+        return {'status': 'not_sent', 'message': 'The assigned driver has no email address on file.'}
+    portal_url = public_application_base_url()
+    message = (
+        f'Hello {driver.display_name or driver.driver_name or "Driver"},\n\n'
+        f'A shipment has been assigned to you.\n'
+        f'Reference: {shipment.tracking_number}\n'
+        f'Pickup: {shipment.pickup_address or shipment.origin}\n'
+        f'Pickup time: {shipment.pickup_at.isoformat() if shipment.pickup_at else "Contact dispatch"}\n'
+        f'Delivery: {shipment.end_customer_address or shipment.destination}\n'
+        f'Cargo: {shipment.cargo_type} ({shipment.tonnage:g} tonnes)\n'
+        f'Delivery deadline: {shipment.delivery_due_at.isoformat() if shipment.delivery_due_at else "Not specified"}\n\n'
+        f'Sign in to the Difan driver portal for trip documents and updates: {portal_url}/index.html\n'
+    )
+    notification = send_shipment_email(
+        [driver.email],
+        f'Difan shipment assigned — {shipment.tracking_number}',
+        message,
+    )
+    if notification['status'] == 'sent':
+        notification['message'] = 'Shipment assignment emailed to the driver.'
+    return notification
+
+
+def build_signed_pod_pdf(shipment, proof):
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((48, 58), 'DIFAN LOGISTICS - PROOF OF DELIVERY', fontsize=16, fontname='helv')
+    detail_lines = [
+        f'Tracking reference: {shipment.tracking_number}',
+        f'Client: {shipment.company_name or "Not specified"}',
+        f'Cargo: {shipment.cargo_type} ({shipment.tonnage:g} tonnes)',
+        f'Pickup: {shipment.origin}',
+        f'Delivery: {shipment.destination}',
+        f'End customer: {shipment.end_customer_name or "Not specified"}',
+        f'Delivered at: {shipment.arrived_at.isoformat() if shipment.arrived_at else "Not recorded"}',
+        f'Received and signed by: {proof.signer_name}',
+        f'Signed at: {proof.signed_at.isoformat()}',
+    ]
+    detail_lines.append(
+        f'Agreed delivery amount (including VAT): KES {shipment.quoted_amount_kes:,.2f}'
+        if shipment.quoted_amount_kes is not None
+        else 'Agreed delivery amount: Not recorded'
+    )
+    detention_amount = round(detention_total(shipment), 2)
+    detail_lines.append(
+        f'Detention: {round(detention_amount, 2):,.2f} KES before VAT; VAT at 16%: '
+        f'{round(detention_amount * 0.16, 2):,.2f} KES; applied rate: '
+        f'{(shipment.detention_rate_kes_per_hour or 0):,.2f} KES/hour'
+    )
+    detail_lines.append(
+        f'Total invoice amount including detention and VAT: KES {detention_invoice_amount(shipment)[0]:,.2f}'
+    )
+    details = '\n'.join(' '.join(line.split()) for line in detail_lines)
+    details = details.encode('latin-1', 'replace').decode('latin-1')
+    page.insert_textbox(fitz.Rect(48, 85, 547, 320), details, fontsize=11, fontname='helv', lineheight=1.5)
+    page.insert_text((48, 365), 'Customer signature', fontsize=11, fontname='helv')
+    page.insert_image(fitz.Rect(48, 380, 330, 500), stream=proof.signature_png, keep_proportion=True)
+    page.insert_textbox(
+        fitz.Rect(48, 535, 547, 590),
+        "This electronic proof of delivery records the receiving customer's confirmation of the cargo listed above.",
+        fontsize=9,
+        fontname='helv',
+    )
+    return pdf.tobytes()
+
+
+def route_quote(origin, destination, truck_type, tonnage, client_user_id=None):
     if origin not in FREIGHT_HUBS or destination not in FREIGHT_HUBS:
         raise ValueError('Select a supported pickup and destination hub.')
     if origin == destination:
@@ -280,11 +697,19 @@ def route_quote(origin, destination, truck_type, tonnage):
     distance_km = max(1, round(6371 * 2 * math.atan2(
         math.sqrt(haversine), math.sqrt(1 - haversine),
     ) * 1.22))
-    destination_rate = DestinationRate.query.filter_by(
-        origin=origin,
-        destination=destination,
-        truck_type=truck_type,
-    ).first()
+    destination_rate = None
+    agreed_rate = None
+    if client_user_id:
+        agreed_rate = ClientDestinationRate.query.filter_by(
+            client_user_id=client_user_id, origin=origin, destination=destination, truck_type=truck_type,
+        ).first()
+    if not agreed_rate:
+        destination_rate = DestinationRate.query.filter_by(
+            origin=origin,
+            destination=destination,
+            truck_type=truck_type,
+        ).first()
+    destination_rate = agreed_rate or destination_rate
     freight = (
         destination_rate.flat_rate_kes
         if destination_rate
@@ -300,8 +725,26 @@ def route_quote(origin, destination, truck_type, tonnage):
         'subtotal_kes': subtotal_kes,
         'vat_kes': vat_kes,
         'total_kes': round(subtotal_kes + vat_kes, 2),
-        'pricing_source': 'uploaded_destination_rate' if destination_rate else 'standard_estimate',
+        'pricing_source': (
+            'agreed_client_rate' if agreed_rate
+            else 'uploaded_destination_rate' if destination_rate else 'standard_estimate'
+        ),
     }
+
+
+def distance_between_coordinates_km(latitude_a, longitude_a, latitude_b, longitude_b):
+    phi_a = math.radians(latitude_a)
+    phi_b = math.radians(latitude_b)
+    delta_phi = math.radians(latitude_b - latitude_a)
+    delta_lambda = math.radians(longitude_b - longitude_a)
+    haversine = (
+        math.sin(delta_phi / 2) ** 2
+        + math.cos(phi_a) * math.cos(phi_b) * math.sin(delta_lambda / 2) ** 2
+    )
+    return 6371 * 2 * math.atan2(
+        math.sqrt(haversine),
+        math.sqrt(max(0.0, 1 - haversine)),
+    )
 
 
 def normalize_text(value):
@@ -682,6 +1125,7 @@ def document_metadata(document):
         'tracking_number': document.shipment_tracking_number,
         'document_type': document.document_type,
         'filename': document.original_filename,
+        'mime_type': document.mime_type,
         'destination_validated': document.destination_validated,
         'ocr_destination': document.ocr_destination,
         'uploaded_at': document.uploaded_at.isoformat(),
@@ -693,6 +1137,54 @@ def document_metadata(document):
         'extracted_deliveries': extracted_deliveries,
         'download_url': f'/api/shipments/{document.shipment_tracking_number}/documents/{document.id}/download',
     }
+
+
+def persist_generated_pdf(shipment, user, document_type, filename, contents):
+    directory = current_app.config['SHIPMENT_DOCUMENTS_DIR']
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    os.chmod(directory, 0o700)
+
+    storage_filename = f'{uuid.uuid4().hex}.pdf'
+    path = os.path.join(directory, storage_filename)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, 'wb') as document_file:
+            document_file.write(contents)
+    except OSError:
+        if os.path.exists(path):
+            os.remove(path)
+        raise
+
+    existing = ShipmentDocument.query.filter_by(
+        shipment_tracking_number=shipment.tracking_number,
+        document_type=document_type,
+    ).first()
+    previous_path = (
+        os.path.join(directory, existing.storage_filename)
+        if existing else None
+    )
+    document = existing or ShipmentDocument()
+    document.id = document.id or str(uuid.uuid4())
+    document.shipment_tracking_number = shipment.tracking_number
+    document.document_type = document_type
+    document.original_filename = filename
+    document.storage_filename = storage_filename
+    document.mime_type = 'application/pdf'
+    document.destination_validated = False
+    document.ocr_destination = None
+    document.security_stamped_at = None
+    document.client_received_stamped_at = None
+    document.uploaded_by_id = user.id
+    document.uploaded_at = datetime.now(timezone.utc)
+    db.session.add(document)
+    return document, path, previous_path
+
+
+def cleanup_generated_pdf(path, previous_path=None):
+    if os.path.exists(path):
+        os.remove(path)
+    if previous_path and previous_path != path and os.path.exists(previous_path):
+        os.remove(previous_path)
 
 
 @shipments_bp.route('', methods=['GET'])
@@ -707,6 +1199,260 @@ def list_shipments():
     shipments = Shipment.query.order_by(Shipment.created_at.desc()).all()
     visible = [shipment.to_dict() for shipment in shipments if shipment_visible_to(shipment, user)]
     return jsonify({'status': 'success', 'shipments': visible}), 200
+
+
+def accessible_claim_user(shipment, user):
+    return bool(
+        user and (
+            user.role in ADMIN_ROLES
+            or (
+                user.role == 'client'
+                and shipment_visible_to(shipment, user)
+            )
+            or (
+                user.role == 'driver'
+                and shipment.assigned_driver_id == user.id
+            )
+        )
+    )
+
+
+def read_damage_photo(uploaded):
+    if not uploaded or not uploaded.filename:
+        raise ValueError('Attach a photo of the reported damage.')
+    original_name = secure_filename(uploaded.filename)[:180] or 'damage-evidence'
+    contents = uploaded.read(5 * 1024 * 1024 + 1)
+    if not contents or len(contents) > 5 * 1024 * 1024:
+        raise ValueError('Damage photos must be between 1 byte and 5 MB.')
+    try:
+        with Image.open(io.BytesIO(contents)) as image:
+            if image.format not in {'JPEG', 'PNG', 'WEBP'}:
+                raise ValueError('Use a JPEG, PNG, or WEBP damage photo.')
+            image.load()
+            if image.width > 5000 or image.height > 5000:
+                raise ValueError('The damage photo dimensions are too large.')
+            output = io.BytesIO()
+            image.convert('RGB').save(output, format='JPEG', quality=88, optimize=True)
+            return original_name, 'image/jpeg', output.getvalue()
+    except (Image.DecompressionBombError, OSError, UnidentifiedImageError) as error:
+        raise ValueError('The damage photo is invalid or unreadable.') from error
+
+
+@shipments_bp.route('/<tracking_number>/claims', methods=['GET', 'POST'])
+@jwt_required()
+def shipment_damage_claims(tracking_number):
+    user = get_request_user()
+    shipment = db.session.get(Shipment, tracking_number.strip().upper())
+    if not shipment or not accessible_claim_user(shipment, user):
+        return jsonify({'status': 'error', 'message': 'Shipment was not found for this account.'}), 404
+
+    if request.method == 'GET':
+        claims = ShipmentDamageClaim.query.filter_by(
+            shipment_tracking_number=shipment.tracking_number,
+        ).order_by(ShipmentDamageClaim.filed_at.desc()).all()
+        return jsonify({'status': 'success', 'claims': [claim.to_dict() for claim in claims]}), 200
+
+    if user.role not in {'client', 'driver'}:
+        return jsonify({'status': 'error', 'message': 'Only the shipper or assigned driver can file a damage claim.'}), 403
+    if shipment.status not in {'IN_TRANSIT', 'BREAKDOWN', 'DELIVERED'}:
+        return jsonify({'status': 'error', 'message': 'Damage claims can be filed after dispatch starts.'}), 409
+
+    item_id_value = request.form.get('line_item_id', '').strip()
+    item_description = request.form.get('line_item_description', '').strip()
+    details = request.form.get('details', '').strip()
+    if len(details) < 5 or len(details) > 2000:
+        return jsonify({'status': 'error', 'message': 'Describe the damage in 5 to 2,000 characters.'}), 400
+    if len(item_description) > 300:
+        return jsonify({'status': 'error', 'message': 'Line item description cannot exceed 300 characters.'}), 400
+    line_item = None
+    if item_id_value:
+        try:
+            line_item = db.session.get(ShipmentDelivery, int(item_id_value))
+        except ValueError:
+            line_item = None
+        if not line_item or line_item.shipment_tracking_number != shipment.tracking_number:
+            return jsonify({'status': 'error', 'message': 'Select a line item belonging to this shipment.'}), 400
+    if line_item:
+        item_description = (
+            f'{line_item.delivery_number} — {line_item.goods_description or line_item.destination or "Delivery item"}'
+        )[:300]
+    if not item_description:
+        return jsonify({'status': 'error', 'message': 'Select a delivery line item or enter its description.'}), 400
+
+    try:
+        filename, mime_type, photo = read_damage_photo(request.files.get('photo'))
+    except ValueError as error:
+        return jsonify({'status': 'error', 'message': str(error)}), 400
+    claim = ShipmentDamageClaim(
+        shipment_tracking_number=shipment.tracking_number,
+        line_item_id=line_item.id if line_item else None,
+        line_item_description=item_description,
+        details=details,
+        filed_by_id=user.id,
+    )
+    claim.evidence.append(ShipmentDamageEvidence(
+        uploaded_by_id=user.id,
+        filename=filename,
+        mime_type=mime_type,
+        contents=photo,
+        sha256=hashlib.sha256(photo).hexdigest(),
+    ))
+    db.session.add(claim)
+    db.session.commit()
+    return jsonify({'status': 'success', 'claim': claim.to_dict()}), 201
+
+
+@shipments_bp.post('/claims/<claim_id>/evidence')
+@jwt_required()
+def add_damage_claim_evidence(claim_id):
+    user = get_request_user()
+    claim = db.session.get(ShipmentDamageClaim, claim_id)
+    shipment = db.session.get(Shipment, claim.shipment_tracking_number) if claim else None
+    if not claim or not shipment or not accessible_claim_user(shipment, user):
+        return jsonify({'status': 'error', 'message': 'Damage claim was not found for this account.'}), 404
+    if user.role not in {'client', 'driver'}:
+        return jsonify({'status': 'error', 'message': 'Only the shipper or assigned driver can add claim evidence.'}), 403
+    details = request.form.get('details', '').strip()
+    if len(details) > 2000:
+        return jsonify({'status': 'error', 'message': 'Evidence note cannot exceed 2,000 characters.'}), 400
+    try:
+        filename, mime_type, photo = read_damage_photo(request.files.get('photo'))
+    except ValueError as error:
+        return jsonify({'status': 'error', 'message': str(error)}), 400
+    evidence = ShipmentDamageEvidence(
+        claim_id=claim.id,
+        uploaded_by_id=user.id,
+        filename=filename,
+        mime_type=mime_type,
+        contents=photo,
+        sha256=hashlib.sha256(photo).hexdigest(),
+    )
+    db.session.add(evidence)
+    db.session.commit()
+    return jsonify({'status': 'success', 'evidence': evidence.to_dict()}), 201
+
+
+@shipments_bp.get('/claims/evidence/<evidence_id>')
+@jwt_required()
+def download_damage_claim_evidence(evidence_id):
+    user = get_request_user()
+    evidence = db.session.get(ShipmentDamageEvidence, evidence_id)
+    claim = evidence.claim if evidence else None
+    shipment = db.session.get(Shipment, claim.shipment_tracking_number) if claim else None
+    if not evidence or not claim or not shipment or not accessible_claim_user(shipment, user):
+        return jsonify({'status': 'error', 'message': 'Damage evidence was not found for this account.'}), 404
+    response = send_file(
+        io.BytesIO(evidence.contents),
+        mimetype=evidence.mime_type,
+        as_attachment=True,
+        download_name=evidence.filename,
+        max_age=0,
+    )
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+
+@shipments_bp.post('/<tracking_number>/geofence-events')
+@jwt_required()
+def record_shipment_geofence_event(tracking_number):
+    user = get_request_user()
+    shipment = db.session.get(Shipment, tracking_number.strip().upper())
+    if not shipment or not user or not (
+        user.role in ADMIN_ROLES
+        or (user.role == 'driver' and shipment.assigned_driver_id == user.id)
+    ):
+        return jsonify({'status': 'error', 'message': 'Shipment was not found for this driver account.'}), 404
+    if user.role == 'driver' and user.employment_status != 'ACTIVE':
+        return jsonify({'status': 'error', 'message': 'Only active drivers can record shipment geofence events.'}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'status': 'error', 'message': 'Provide a geofence event.'}), 400
+    site_type = data.get('site_type')
+    event_type = data.get('event_type')
+    if site_type not in {'PICKUP', 'DESTINATION'} or event_type not in {'ARRIVE', 'DEPART'}:
+        return jsonify({'status': 'error', 'message': 'Choose pickup or destination, and arrival or departure.'}), 400
+    facility_name = shipment.origin if site_type == 'PICKUP' else shipment.destination
+    coordinates = FREIGHT_HUBS.get(facility_name)
+    if not coordinates:
+        return jsonify({'status': 'error', 'message': 'This shipment hub has no configured geofence coordinates.'}), 409
+    try:
+        latitude = float(data.get('latitude'))
+        longitude = float(data.get('longitude'))
+        accuracy_m = float(data.get('accuracy_m'))
+        if not math.isfinite(latitude) or not math.isfinite(longitude):
+            raise ValueError
+        if not math.isfinite(accuracy_m) or not 0 <= accuracy_m <= 750:
+            return jsonify({
+                'status': 'error',
+                'message': 'GPS accuracy must be within 750 m to verify a geofence event.',
+            }), 400
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({'status': 'error', 'message': 'Allow location access and provide valid GPS coordinates.'}), 400
+
+    lat1, lon1 = map(math.radians, coordinates)
+    lat2, lon2 = math.radians(latitude), math.radians(longitude)
+    delta_lat = lat2 - lat1
+    delta_lon = lon2 - lon1
+    distance_m = 6371000 * 2 * math.asin(math.sqrt(
+        math.sin(delta_lat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(delta_lon / 2) ** 2
+    ))
+    if distance_m > 750:
+        return jsonify({
+            'status': 'error',
+            'message': f'You are {round(distance_m)} m from the {facility_name} geofence; move within 750 m to record this event.',
+        }), 400
+    last_event = ShipmentGeofenceEvent.query.filter_by(
+        shipment_tracking_number=shipment.tracking_number,
+        site_type=site_type,
+    ).order_by(ShipmentGeofenceEvent.recorded_at.desc(), ShipmentGeofenceEvent.id.desc()).first()
+    if event_type == 'ARRIVE' and last_event and last_event.event_type == 'ARRIVE':
+        return jsonify({'status': 'error', 'message': 'An arrival is already open; record departure first.'}), 409
+    if event_type == 'DEPART' and (not last_event or last_event.event_type != 'ARRIVE'):
+        return jsonify({'status': 'error', 'message': 'Record an arrival before recording departure.'}), 409
+    if site_type == 'PICKUP' and shipment.status not in {'ASSIGNED', 'AWAITING_DISPATCH', 'IN_TRANSIT', 'BREAKDOWN'}:
+        return jsonify({'status': 'error', 'message': 'Pickup geofence is unavailable for this shipment status.'}), 409
+    if site_type == 'DESTINATION' and shipment.status not in {'IN_TRANSIT', 'BREAKDOWN', 'DELIVERED'}:
+        return jsonify({'status': 'error', 'message': 'Destination geofence is available after dispatch starts.'}), 409
+    event = ShipmentGeofenceEvent(
+        shipment_tracking_number=shipment.tracking_number,
+        site_type=site_type,
+        event_type=event_type,
+        facility_name=facility_name,
+        latitude=latitude,
+        longitude=longitude,
+        accuracy_m=accuracy_m,
+        recorded_by_id=user.id,
+    )
+    db.session.add(event)
+    db.session.commit()
+    invoice_amount = None
+    if event_type == 'DEPART':
+        from backend.routes.portal import ShipmentFinance
+
+        finance = db.session.get(ShipmentFinance, shipment.tracking_number)
+        if finance and shipment.quoted_amount_kes is not None:
+            invoice_amount, _, _ = detention_invoice_amount(shipment)
+            finance.invoice_amount_kes = invoice_amount
+            finance.updated_by_id = user.id
+            finance.updated_at = event.recorded_at
+            db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'message': f'{event_type.title()} recorded for {facility_name}.',
+        'event': {
+            'site_type': event.site_type,
+            'event_type': event.event_type,
+            'facility_name': event.facility_name,
+            'recorded_at': event.recorded_at.isoformat(),
+            'accuracy_m': event.accuracy_m,
+        },
+        'detention_charges_kes': round(detention_total(shipment), 2),
+        'invoice_amount_kes': invoice_amount,
+    }), 201
 
 
 @shipments_bp.get('/clients')
@@ -736,15 +1482,33 @@ def list_shipment_clients():
     }), 200
 
 
+def resolve_rate_client(raw_client_id):
+    # No client id means the standard rate sheet used by the quote page.
+    if raw_client_id in (None, '', 'standard'):
+        return None, None
+    try:
+        client = db.session.get(UserAccount, int(raw_client_id))
+    except (TypeError, ValueError):
+        client = None
+    if not client or client.role != 'client':
+        return None, (jsonify({'status': 'error', 'message': 'Select a valid client account.'}), 400)
+    return client, None
+
+
 @shipments_bp.get('/rates')
 @jwt_required()
 def list_destination_rates():
     user = get_request_user()
     if not user or user.role not in ADMIN_ROLES:
         return jsonify({'status': 'error', 'message': 'Only HR and management can view imported destination rates.'}), 403
-    rates = DestinationRate.query.order_by(
-        DestinationRate.origin, DestinationRate.destination, DestinationRate.truck_type,
-    ).all()
+    client, error = resolve_rate_client(request.args.get('client_id'))
+    if error:
+        return error
+    model = ClientDestinationRate if client else DestinationRate
+    query = model.query
+    if client:
+        query = query.filter_by(client_user_id=client.id)
+    rates = query.order_by(model.origin, model.destination, model.truck_type).all()
     return jsonify({'status': 'success', 'rates': [rate.to_dict() for rate in rates]}), 200
 
 
@@ -820,19 +1584,26 @@ def import_destination_rates():
         route_keys.add(key)
         validated.append(row)
 
+    client, client_error = resolve_rate_client(data.get('client_id'))
+    if client_error:
+        return client_error
+    model = ClientDestinationRate if client else DestinationRate
+    scope = {'client_user_id': client.id} if client else {}
     imported_at = datetime.now(timezone.utc)
     imported_rates = []
     for row in validated:
-        rate = DestinationRate.query.filter_by(
+        rate = model.query.filter_by(
             origin=row['origin'],
             destination=row['destination'],
             truck_type=row['truck_type'],
+            **scope,
         ).first()
         if rate is None:
-            rate = DestinationRate(
+            rate = model(
                 origin=row['origin'],
                 destination=row['destination'],
                 truck_type=row['truck_type'],
+                **scope,
             )
             db.session.add(rate)
         rate.flat_rate_kes = row['flat_rate_kes']
@@ -874,6 +1645,7 @@ def quote_shipment():
             data.get('destination'),
             data.get('truck_type'),
             tonnage,
+            client_user_id=user.id,
         )
     except (TypeError, ValueError) as error:
         return jsonify({'status': 'error', 'message': str(error)}), 400
@@ -903,6 +1675,16 @@ def create_shipment_request():
         ('end_customer_address', 300), ('end_customer_phone', 40),
     )):
         return jsonify({'status': 'error', 'message': 'One or more shipment details exceed the supported length.'}), 400
+    customer_email = data.get('end_customer_email')
+    if isinstance(customer_email, str) and not customer_email.strip():
+        customer_email = None
+    if customer_email is not None:
+        if (
+            not isinstance(customer_email, str)
+            or len(customer_email.strip()) > 254
+            or not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', customer_email.strip())
+        ):
+            return jsonify({'status': 'error', 'message': 'Enter a valid end-customer email address.'}), 400
     try:
         if isinstance(data.get('tonnage'), bool):
             raise ValueError('Cargo weight must be a number of tonnes.')
@@ -914,6 +1696,7 @@ def create_shipment_request():
             data['destination'].strip(),
             data['truck_type'],
             tonnage,
+            client_user_id=user.id,
         )
         pickup_at = datetime.fromisoformat(data['pickup_at'].strip().replace('Z', '+00:00'))
         if pickup_at.tzinfo is None:
@@ -947,6 +1730,7 @@ def create_shipment_request():
         end_customer_name=data['end_customer_name'].strip(),
         end_customer_address=data['end_customer_address'].strip(),
         end_customer_phone=data['end_customer_phone'].strip(),
+        end_customer_email=customer_email.strip() if customer_email else None,
         quoted_amount_kes=quote['total_kes'],
     )
     db.session.add(shipment)
@@ -985,6 +1769,7 @@ def request_destination_change(tracking_number):
     try:
         quote = route_quote(
             shipment.origin, destination.strip(), shipment.truck_type, shipment.tonnage,
+            client_user_id=shipment.client_user_id,
         )
     except ValueError as error:
         return jsonify({'status': 'error', 'message': str(error)}), 400
@@ -1058,6 +1843,471 @@ def track_shipment(tracking_number):
     }), 200
 
 
+@shipments_bp.get('/public-tracking/<token>')
+def public_track_shipment(token):
+    if len(token) < 40 or len(token) > 128:
+        return jsonify({'status': 'error', 'message': 'Tracking link is invalid or expired.'}), 404
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    shipment = Shipment.query.filter_by(public_tracking_token_hash=token_hash).first()
+    if not shipment or not shipment.public_tracking_expires_at:
+        return jsonify({'status': 'error', 'message': 'Tracking link is invalid or expired.'}), 404
+    expiry = shipment.public_tracking_expires_at
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    if expiry <= datetime.now(timezone.utc):
+        return jsonify({'status': 'error', 'message': 'Tracking link is invalid or expired.'}), 404
+
+    response = jsonify({
+        'status': 'success',
+        'tracking': {
+            'tracking_number': shipment.tracking_number,
+            'company_name': shipment.company_name or 'Difan Logistics',
+            'shipment_status': shipment.status,
+            'origin': shipment.origin,
+            'destination': shipment.destination,
+            'delivery_due_at': shipment.delivery_due_at.isoformat() if shipment.delivery_due_at else None,
+            'departed_at': shipment.departed_at.isoformat() if shipment.departed_at else None,
+            'arrived_at': shipment.arrived_at.isoformat() if shipment.arrived_at else None,
+            'last_updated_at': (
+                shipment.arrived_at or shipment.departed_at or shipment.created_at
+            ).isoformat(),
+        },
+    })
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response, 200
+
+
+@shipments_bp.post('/driver-location')
+@jwt_required()
+def update_driver_location():
+    user = get_request_user()
+    if not user or user.role != 'driver':
+        return jsonify({'status': 'error', 'message': 'Only drivers may update their dispatch location.'}), 403
+    if user.account_status != 'active' or user.employment_status != 'ACTIVE':
+        return jsonify({'status': 'error', 'message': 'Your driver account must be active to update dispatch location.'}), 403
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'status': 'error', 'message': 'A JSON location update is required.'}), 400
+    coordinates = []
+    for key in ('latitude', 'longitude', 'accuracy_m'):
+        value = data.get(key)
+        if isinstance(value, bool):
+            return jsonify({'status': 'error', 'message': 'GPS coordinates and accuracy must be numeric.'}), 400
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return jsonify({'status': 'error', 'message': 'GPS coordinates and accuracy must be numeric.'}), 400
+        if not math.isfinite(number):
+            return jsonify({'status': 'error', 'message': 'GPS coordinates and accuracy must be finite.'}), 400
+        coordinates.append(number)
+    latitude, longitude, accuracy_m = coordinates
+    if not -90 <= latitude <= 90 or not -180 <= longitude <= 180 or not 0 <= accuracy_m <= 1000:
+        return jsonify({'status': 'error', 'message': 'GPS coordinates or accuracy are outside supported limits.'}), 400
+
+    location = db.session.get(DriverLocation, user.id)
+    if location is None:
+        location = DriverLocation(driver_id=user.id)
+        db.session.add(location)
+    location.latitude = latitude
+    location.longitude = longitude
+    location.accuracy_m = accuracy_m
+    location.updated_at = datetime.now(timezone.utc)
+    db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'updated_at': location.updated_at.isoformat(),
+        'message': 'Your current GPS position is available to dispatch for 30 minutes.',
+    }), 200
+
+
+@shipments_bp.get('/driver-load-board')
+@jwt_required()
+def driver_load_board():
+    user = get_request_user()
+    if not user or user.role != 'driver':
+        return jsonify({'status': 'error', 'message': 'Only drivers may view compatible loads.'}), 403
+    if user.account_status != 'active' or user.employment_status != 'ACTIVE':
+        return jsonify({
+            'status': 'success',
+            'eligible': False,
+            'message': 'Your driver status does not allow load acceptance.',
+            'loads': [],
+        }), 200
+
+    from backend.routes.fleet import FleetVehicle, vehicle_dispatch_block_reason
+
+    vehicle = FleetVehicle.query.filter_by(assigned_driver_id=user.id).first()
+    if not vehicle:
+        return jsonify({
+            'status': 'success',
+            'eligible': False,
+            'message': 'A fleet vehicle must be assigned before you can accept loads.',
+            'loads': [],
+        }), 200
+    block_reason = vehicle_dispatch_block_reason(user)
+    if block_reason or vehicle.status in {'MAINTENANCE', 'BREAKDOWN'}:
+        return jsonify({
+            'status': 'success',
+            'eligible': False,
+            'message': block_reason or f'{vehicle.registration} is unavailable for dispatch.',
+            'loads': [],
+        }), 200
+    if Shipment.query.filter(
+        Shipment.assigned_driver_id == user.id,
+        Shipment.status.in_({'IN_TRANSIT', 'BREAKDOWN'}),
+    ).first():
+        return jsonify({
+            'status': 'success',
+            'eligible': False,
+            'message': 'Finish or resolve your active trip before accepting another load.',
+            'loads': [],
+        }), 200
+
+    now = datetime.now(timezone.utc)
+    location = db.session.get(DriverLocation, user.id)
+    location_time = location.updated_at if location else None
+    if location_time and location_time.tzinfo is None:
+        location_time = location_time.replace(tzinfo=timezone.utc)
+    fresh_location = (
+        location
+        if location_time and now - location_time <= timedelta(minutes=30)
+        else None
+    )
+    previous_destinations = {
+        shipment.destination.strip().casefold()
+        for shipment in Shipment.query.filter(
+            Shipment.assigned_driver_id == user.id,
+            Shipment.status.in_({'IN_TRANSIT', 'BREAKDOWN', 'DELIVERED'}),
+        ).all()
+    }
+    candidates = Shipment.query.filter(
+        Shipment.assigned_driver_id.is_(None),
+        Shipment.status.in_({'REQUESTED', 'PLANNED', 'ASSIGNED', 'AWAITING_DISPATCH'}),
+        Shipment.truck_type == vehicle.truck_type,
+        Shipment.tonnage <= vehicle.capacity_tonnes,
+    ).all()
+    loads = []
+    for shipment in candidates:
+        hub_coordinates = FREIGHT_HUBS.get(shipment.origin)
+        distance = (
+            distance_between_coordinates_km(
+                fresh_location.latitude,
+                fresh_location.longitude,
+                hub_coordinates[0],
+                hub_coordinates[1],
+            )
+            if fresh_location and hub_coordinates else None
+        )
+        loads.append({
+            'tracking_number': shipment.tracking_number,
+            'company_name': shipment.company_name,
+            'origin': shipment.origin,
+            'pickup_address': shipment.pickup_address,
+            'pickup_at': shipment.pickup_at.isoformat() if shipment.pickup_at else None,
+            'destination': shipment.destination,
+            'cargo_type': shipment.cargo_type,
+            'tonnage': shipment.tonnage,
+            'truck_type': shipment.truck_type,
+            'delivery_due_at': shipment.delivery_due_at.isoformat() if shipment.delivery_due_at else None,
+            'distance_to_pickup_km': round(distance, 1) if distance is not None else None,
+            'backhaul': shipment.origin.strip().casefold() in previous_destinations,
+        })
+    loads.sort(key=lambda item: (
+        item['distance_to_pickup_km'] is None,
+        item['distance_to_pickup_km'] if item['distance_to_pickup_km'] is not None else math.inf,
+        item['pickup_at'] or '',
+        item['tracking_number'],
+    ))
+    return jsonify({
+        'status': 'success',
+        'eligible': True,
+        'vehicle_registration': vehicle.registration,
+        'location_updated_at': fresh_location.updated_at.isoformat() if fresh_location else None,
+        'message': (
+            'Loads are sorted by distance from your recently shared GPS location.'
+            if fresh_location
+            else 'Share a fresh GPS location to sort these loads by pickup proximity.'
+        ),
+        'loads': loads,
+    }), 200
+
+
+@shipments_bp.post('/driver-load-board/<tracking_number>/accept')
+@jwt_required()
+def accept_driver_load(tracking_number):
+    user = get_request_user()
+    if not user or user.role != 'driver' or user.account_status != 'active':
+        return jsonify({'status': 'error', 'message': 'An active driver account is required to accept a load.'}), 403
+    if user.employment_status != 'ACTIVE':
+        return jsonify({'status': 'error', 'message': 'Your driver status does not allow load acceptance.'}), 403
+
+    shipment = db.session.get(Shipment, tracking_number.strip().upper())
+    if not shipment:
+        return jsonify({'status': 'error', 'message': 'Load not found.'}), 404
+    from backend.routes.fleet import FleetVehicle, vehicle_dispatch_block_reason
+
+    vehicle = FleetVehicle.query.filter_by(assigned_driver_id=user.id).first()
+    if not vehicle:
+        return jsonify({'status': 'error', 'message': 'A fleet vehicle must be assigned before you can accept loads.'}), 409
+    block_reason = vehicle_dispatch_block_reason(user)
+    if block_reason or vehicle.status in {'MAINTENANCE', 'BREAKDOWN'}:
+        return jsonify({
+            'status': 'error',
+            'message': block_reason or f'{vehicle.registration} is unavailable for dispatch.',
+        }), 409
+    if (
+        shipment.truck_type != vehicle.truck_type
+        or shipment.tonnage > vehicle.capacity_tonnes
+    ):
+        return jsonify({'status': 'error', 'message': 'This load is not compatible with your assigned vehicle.'}), 409
+    if Shipment.query.filter(
+        Shipment.assigned_driver_id == user.id,
+        Shipment.status.in_({'IN_TRANSIT', 'BREAKDOWN'}),
+    ).first():
+        return jsonify({'status': 'error', 'message': 'Finish or resolve your active trip before accepting another load.'}), 409
+
+    updated = Shipment.query.filter(
+        Shipment.tracking_number == shipment.tracking_number,
+        Shipment.assigned_driver_id.is_(None),
+        Shipment.status.in_({'REQUESTED', 'PLANNED', 'ASSIGNED', 'AWAITING_DISPATCH'}),
+    ).update({
+        Shipment.assigned_driver_id: user.id,
+        Shipment.status: 'AWAITING_DISPATCH',
+    }, synchronize_session=False)
+    if updated != 1:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': 'Another dispatcher or driver has already claimed this load.'}), 409
+    db.session.commit()
+    db.session.refresh(shipment)
+    return jsonify({
+        'status': 'success',
+        'message': f'Load {shipment.tracking_number} accepted. Review the trip BOL before departure.',
+        'shipment': shipment.to_dict(),
+    }), 200
+
+
+@shipments_bp.post('/<tracking_number>/auto-assignment')
+@jwt_required()
+def auto_assign_nearest_driver(tracking_number):
+    manager = get_request_user()
+    if not manager or manager.role not in ADMIN_ROLES:
+        return jsonify({'status': 'error', 'message': 'Admin access is required.'}), 403
+    shipment = db.session.get(Shipment, tracking_number.strip().upper())
+    if not shipment:
+        return jsonify({'status': 'error', 'message': 'Shipment not found.'}), 404
+    if shipment.assigned_driver_id is not None or shipment.status not in {
+        'REQUESTED', 'PLANNED', 'ASSIGNED', 'AWAITING_DISPATCH',
+    }:
+        return jsonify({'status': 'error', 'message': 'This shipment is no longer available for automatic assignment.'}), 409
+    if shipment.truck_type not in TRUCK_TYPES or shipment.origin not in FREIGHT_HUBS:
+        return jsonify({'status': 'error', 'message': 'A supported equipment type and pickup hub are required for auto-matching.'}), 400
+
+    from backend.routes.fleet import FleetVehicle, vehicle_dispatch_block_reason
+
+    now = datetime.now(timezone.utc)
+    candidates = []
+    for vehicle in FleetVehicle.query.filter(
+        FleetVehicle.truck_type == shipment.truck_type,
+        FleetVehicle.capacity_tonnes >= shipment.tonnage,
+        FleetVehicle.status.notin_({'MAINTENANCE', 'BREAKDOWN'}),
+    ).all():
+        driver = vehicle.assigned_driver
+        if (
+            not driver
+            or driver.role != 'driver'
+            or driver.account_status != 'active'
+            or driver.employment_status != 'ACTIVE'
+            or vehicle_dispatch_block_reason(driver)
+            or Shipment.query.filter(
+                Shipment.assigned_driver_id == driver.id,
+                Shipment.status.in_({'IN_TRANSIT', 'BREAKDOWN'}),
+            ).first()
+        ):
+            continue
+        location = db.session.get(DriverLocation, driver.id)
+        if not location:
+            continue
+        location_time = location.updated_at
+        if location_time.tzinfo is None:
+            location_time = location_time.replace(tzinfo=timezone.utc)
+        if now - location_time > timedelta(minutes=30):
+            continue
+        pickup_hub = FREIGHT_HUBS[shipment.origin]
+        distance = distance_between_coordinates_km(
+            location.latitude,
+            location.longitude,
+            pickup_hub[0],
+            pickup_hub[1],
+        )
+        candidates.append((distance, driver.id, driver, location))
+    if not candidates:
+        return jsonify({
+            'status': 'error',
+            'message': 'No compatible, dispatch-eligible driver has shared a fresh GPS location in the last 30 minutes.',
+        }), 409
+    candidates.sort(key=lambda candidate: (candidate[0], candidate[1]))
+    distance, driver_id, driver, _location = candidates[0]
+    updated = Shipment.query.filter(
+        Shipment.tracking_number == shipment.tracking_number,
+        Shipment.assigned_driver_id.is_(None),
+        Shipment.status.in_({'REQUESTED', 'PLANNED', 'ASSIGNED', 'AWAITING_DISPATCH'}),
+    ).update({
+        Shipment.assigned_driver_id: driver_id,
+        Shipment.status: 'AWAITING_DISPATCH',
+    }, synchronize_session=False)
+    if updated != 1:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': 'This shipment was assigned by another dispatcher.'}), 409
+    db.session.commit()
+    db.session.refresh(shipment)
+    driver_notification = send_driver_assignment_email(shipment)
+    return jsonify({
+        'status': 'success',
+        'shipment': shipment.to_dict(),
+        'driver': {
+            'id': driver.id,
+            'name': driver.display_name or driver.driver_name or driver.email,
+        },
+        'distance_to_pickup_km': round(distance, 1),
+        'driver_notification': driver_notification,
+    }), 200
+
+
+@shipments_bp.post('/<tracking_number>/tracking-link')
+@jwt_required()
+def create_shipment_tracking_link(tracking_number):
+    user = get_request_user()
+    shipment = db.session.get(Shipment, tracking_number.strip().upper())
+    if (
+        not user
+        or user.role not in ({'client', 'driver'} | ADMIN_ROLES)
+        or not shipment
+        or not shipment_visible_to(shipment, user)
+    ):
+        return jsonify({'status': 'error', 'message': 'Shipment tracking is not available to this account.'}), 404
+
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({'status': 'error', 'message': 'A JSON tracking-link request is required.'}), 400
+    send_email = data.get('send_email', False)
+    if not isinstance(send_email, bool):
+        return jsonify({'status': 'error', 'message': 'The send_email option must be true or false.'}), 400
+    if send_email and not shipment.end_customer_email:
+        return jsonify({
+            'status': 'error',
+            'message': 'Add an end-customer email to the shipment before sending a tracking link.',
+        }), 400
+    if send_email and (
+        not current_app.config.get('SENDGRID_API_KEY')
+        or not current_app.config.get('MAIL_FROM_EMAIL')
+    ):
+        return jsonify({
+            'status': 'error',
+            'message': 'Tracking email delivery is not configured. Set SENDGRID_API_KEY and MAIL_FROM_EMAIL.',
+        }), 503
+
+    tracking_url = create_public_tracking_link(shipment)
+    db.session.commit()
+    notification = send_customer_tracking_email(shipment, tracking_url) if send_email else None
+    return jsonify({
+        'status': 'success',
+        'tracking_url': tracking_url,
+        'expires_at': shipment.public_tracking_expires_at.isoformat(),
+        'notification': notification,
+        'message': notification['message'] if notification else 'Secure tracking link created.',
+    }), 200
+
+
+@shipments_bp.get('/<tracking_number>/bill-of-lading')
+@jwt_required()
+def download_bill_of_lading(tracking_number):
+    user = get_request_user()
+    shipment = db.session.get(Shipment, tracking_number.strip().upper())
+    if (
+        not user
+        or user.role not in ({'client', 'driver'} | ADMIN_ROLES)
+        or not shipment
+        or not shipment_visible_to(shipment, user)
+    ):
+        return jsonify({'status': 'error', 'message': 'Bill of lading is not available to this account.'}), 404
+
+    tracking_url = create_public_tracking_link(shipment)
+    pdf = fitz.open()
+    page = pdf.new_page(width=595, height=842)
+    page.insert_text((48, 56), 'DIFAN LOGISTICS - BILL OF LADING', fontsize=17, fontname='helv')
+    detail_lines = [
+        f'Shipment reference: {shipment.tracking_number}',
+        f'Shipper: {shipment.company_name or "Not specified"}',
+        f'Pickup: {shipment.origin}',
+        f'Pickup address: {shipment.pickup_address or "Not specified"}',
+        f'Pickup schedule: {shipment.pickup_at.isoformat() if shipment.pickup_at else "Not specified"}',
+        f'Delivery hub: {shipment.destination}',
+        f'Delivery address: {shipment.end_customer_address or "Not specified"}',
+        f'Receiver: {shipment.end_customer_name or "Not specified"}',
+        f'Receiver phone: {shipment.end_customer_phone or "Not specified"}',
+        f'Receiver email: {shipment.end_customer_email or "Not specified"}',
+        f'Cargo: {shipment.cargo_type} ({shipment.tonnage:g} tonnes)',
+        f'Truck type: {shipment.truck_type or "Not specified"}',
+        f'Required delivery deadline: {shipment.delivery_due_at.isoformat() if shipment.delivery_due_at else "Not specified"}',
+        f'Freight amount (KES, including VAT): {shipment.quoted_amount_kes:,.2f}' if shipment.quoted_amount_kes is not None else 'Freight amount: Not specified',
+        f'Shipment status: {shipment.status.replace("_", " ")}',
+    ]
+    details = '\n'.join(' '.join(line.split()) for line in detail_lines)
+    details = details.encode('latin-1', 'replace').decode('latin-1')
+    page.insert_textbox(fitz.Rect(48, 82, 390, 510), details, fontsize=10, fontname='helv', lineheight=1.6)
+    page.insert_text((48, 575), 'Carrier / driver signature', fontsize=10, fontname='helv')
+    page.draw_line((48, 610), (370, 610), color=(0.2, 0.2, 0.2), width=0.8)
+    page.insert_text((48, 655), 'Receiver signature', fontsize=10, fontname='helv')
+    page.draw_line((48, 690), (370, 690), color=(0.2, 0.2, 0.2), width=0.8)
+    qr_image = io.BytesIO()
+    qrcode.make(tracking_url).save(qr_image, format='PNG')
+    page.insert_text((425, 565), 'Secure tracking', fontsize=10, fontname='helv')
+    page.insert_image(fitz.Rect(420, 585, 540, 705), stream=qr_image.getvalue())
+    page.insert_textbox(
+        fitz.Rect(48, 745, 540, 790),
+        'The QR code opens the current shipment status. The customer link is private to the recipient and expires after the delivery window.',
+        fontsize=8,
+        fontname='helv',
+    )
+    filename = f'{shipment.tracking_number}-bill-of-lading.pdf'
+    try:
+        _document, path, previous_path = persist_generated_pdf(
+            shipment, user, 'trip_bol', filename, pdf.tobytes(),
+        )
+        db.session.commit()
+    except OSError:
+        db.session.rollback()
+        if 'path' in locals() and os.path.exists(path):
+            os.remove(path)
+        current_app.logger.exception('Unable to store the shipment bill of lading.')
+        return jsonify({'status': 'error', 'message': 'The bill of lading could not be saved to the shipment record.'}), 500
+    except Exception:
+        db.session.rollback()
+        if 'path' in locals() and os.path.exists(path):
+            os.remove(path)
+        current_app.logger.exception('Unable to save the shipment bill of lading record.')
+        return jsonify({'status': 'error', 'message': 'The bill of lading could not be saved to the shipment record.'}), 500
+    if previous_path and previous_path != path and os.path.exists(previous_path):
+        os.remove(previous_path)
+    with open(path, 'rb') as document_file:
+        contents = document_file.read()
+    response = send_file(
+        io.BytesIO(contents),
+        mimetype='application/pdf',
+        as_attachment=request.args.get('preview') != '1',
+        download_name=filename,
+        conditional=False,
+        max_age=0,
+    )
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+
 @shipments_bp.route('/authorize-imei/<imei>', methods=['GET'])
 @jwt_required()
 def authorize_imei(imei):
@@ -1081,6 +2331,8 @@ def update_shipment_assignment(tracking_number):
     shipment = db.session.get(Shipment, tracking_number.strip().upper())
     if shipment is None:
         return jsonify({'status': 'error', 'message': 'Shipment not found.'}), 404
+    if shipment.status in {'IN_TRANSIT', 'BREAKDOWN', 'DELIVERED'}:
+        return jsonify({'status': 'error', 'message': 'Dispatch terms cannot be changed after the trip starts.'}), 409
 
     data = request.get_json(silent=True) or {}
     if 'company_name' not in data or 'driver_user_id' not in data or 'destination' not in data:
@@ -1123,6 +2375,15 @@ def update_shipment_assignment(tracking_number):
     destination = destination.strip()
     if len(destination) > 160:
         return jsonify({'status': 'error', 'message': 'Shipment destination cannot exceed 160 characters.'}), 400
+    rate_value = data.get('detention_rate_kes_per_hour', 0)
+    if isinstance(rate_value, bool):
+        return jsonify({'status': 'error', 'message': 'Detention rate must be a non-negative hourly amount.'}), 400
+    try:
+        detention_rate = float(rate_value)
+    except (TypeError, ValueError):
+        return jsonify({'status': 'error', 'message': 'Detention rate must be a non-negative hourly amount.'}), 400
+    if not math.isfinite(detention_rate) or detention_rate < 0 or detention_rate > 1_000_000:
+        return jsonify({'status': 'error', 'message': 'Detention rate must be between KES 0 and KES 1,000,000 per hour.'}), 400
 
     driver_user_id = data['driver_user_id']
     if isinstance(driver_user_id, bool) or not isinstance(driver_user_id, int):
@@ -1136,15 +2397,26 @@ def update_shipment_assignment(tracking_number):
             'status': 'error',
             'message': 'The selected driver is not active and available for dispatch.',
         }), 400
+    from backend.routes.fleet import vehicle_dispatch_block_reason
+
+    certificate_block = vehicle_dispatch_block_reason(driver)
+    if certificate_block:
+        return jsonify({'status': 'error', 'message': certificate_block}), 400
 
     shipment.company_name = company_name
     shipment.client_user_id = client_account.id
     shipment.assigned_driver_id = driver.id
     shipment.destination = destination
+    shipment.detention_rate_kes_per_hour = detention_rate
     if shipment.status in {'REQUESTED', 'PLANNED', 'ASSIGNED'}:
         shipment.status = 'AWAITING_DISPATCH'
     db.session.commit()
-    return jsonify({'status': 'success', 'shipment': shipment.to_dict()}), 200
+    driver_notification = send_driver_assignment_email(shipment)
+    return jsonify({
+        'status': 'success',
+        'shipment': shipment.to_dict(),
+        'driver_notification': driver_notification,
+    }), 200
 
 
 @shipments_bp.route('/<tracking_number>/status', methods=['PATCH'])
@@ -1184,6 +2456,12 @@ def update_shipment_status(tracking_number):
             'status': 'error',
             'message': 'Your driver status does not allow starting or resuming a dispatch. Safety reports remain available.',
         }), 403
+    if new_status == 'IN_TRANSIT' and shipment.assigned_driver:
+        from backend.routes.fleet import vehicle_dispatch_block_reason
+
+        certificate_block = vehicle_dispatch_block_reason(shipment.assigned_driver)
+        if certificate_block:
+            return jsonify({'status': 'error', 'message': certificate_block}), 409
     if user.role == 'driver' and new_status == 'IN_TRANSIT':
         client_user_id = data.get('client_user_id')
         if client_user_id is not None and (
@@ -1257,7 +2535,67 @@ def update_shipment_status(tracking_number):
                 ))
 
     shipment.status = new_status
+    automated_warnings = []
+    if new_status == 'DELIVERED' and shipment.assigned_driver:
+        from backend.routes.workforce import create_automated_driver_warning
+
+        warning_rules = []
+        pod_photo = ShipmentOperationalEvidence.query.filter_by(
+            shipment_tracking_number=shipment.tracking_number,
+            evidence_type='POD_PHOTO',
+            uploaded_by_id=shipment.assigned_driver_id,
+        ).first()
+        if not pod_photo:
+            warning_rules.append((
+                'MISSING_POD_PHOTO',
+                'POD_DOCUMENTATION',
+                (
+                    f'Shipment {shipment.tracking_number} was marked delivered without a driver-uploaded '
+                    'proof-of-delivery photo. This automated warning is open to rebuttal for 72 hours.'
+                ),
+            ))
+
+        due_at = shipment.delivery_due_at
+        if due_at and due_at.tzinfo is None:
+            due_at = due_at.replace(tzinfo=timezone.utc)
+        traffic_proof = ShipmentOperationalEvidence.query.filter_by(
+            shipment_tracking_number=shipment.tracking_number,
+            evidence_type='TRAFFIC_PROOF',
+            uploaded_by_id=shipment.assigned_driver_id,
+        ).first()
+        if due_at and shipment.arrived_at > due_at and not traffic_proof:
+            warning_rules.append((
+                'LATE_WITHOUT_TRAFFIC_PROOF',
+                'MINOR_LATE_ARRIVAL',
+                (
+                    f'Shipment {shipment.tracking_number} arrived at {shipment.arrived_at.isoformat()}, '
+                    f'after the due time {due_at.isoformat()}, with no traffic-proof evidence on file. '
+                    'This automated warning is open to rebuttal for 72 hours.'
+                ),
+            ))
+        for source_code, severity, details in warning_rules:
+            case = create_automated_driver_warning(
+                shipment.assigned_driver,
+                source_code,
+                f'{shipment.tracking_number}:{source_code}',
+                severity,
+                details,
+                shipment.arrived_at,
+            )
+            if case:
+                automated_warnings.append(case.to_dict())
     db.session.commit()
+    customer_notification = None
+    if new_status == 'IN_TRANSIT':
+        if shipment.end_customer_email:
+            tracking_url = create_public_tracking_link(shipment)
+            db.session.commit()
+            customer_notification = send_customer_tracking_email(shipment, tracking_url)
+        else:
+            customer_notification = {
+                'status': 'not_sent',
+                'message': 'No end-customer email address is on file; create a tracking link from shipment tracking to share it.',
+            }
     for path, stamped_bytes in stamp_updates:
         temporary_path = f'{path}.{uuid.uuid4().hex}.tmp'
         try:
@@ -1273,7 +2611,12 @@ def update_shipment_status(tracking_number):
                 'status': 'error',
                 'message': 'Shipment status was updated, but a document stamp could not be applied. Contact an administrator.',
             }), 500
-    return jsonify({'status': 'success', 'shipment': shipment.to_dict()}), 200
+    return jsonify({
+        'status': 'success',
+        'shipment': shipment.to_dict(),
+        'automated_warnings': automated_warnings,
+        'customer_notification': customer_notification,
+    }), 200
 
 
 @shipments_bp.post('/<tracking_number>/proof-of-delivery/sign')
@@ -1330,7 +2673,17 @@ def sign_proof_of_delivery(tracking_number):
         signature_png=signature_bytes,
         signed_at=signed_at,
     )
+    signed_pdf = build_signed_pod_pdf(shipment, proof)
     db.session.add(proof)
+    pod_filename = f'{shipment.tracking_number}-signed-proof-of-delivery.pdf'
+    try:
+        _document, pod_path, previous_pod_path = persist_generated_pdf(
+            shipment, user, 'signed_pod', pod_filename, signed_pdf,
+        )
+    except OSError:
+        db.session.rollback()
+        current_app.logger.exception('Unable to store the signed proof of delivery PDF.')
+        return jsonify({'status': 'error', 'message': 'The signed proof of delivery could not be saved.'}), 500
     invoice_created = False
     try:
         if shipment.quoted_amount_kes is not None:
@@ -1340,7 +2693,7 @@ def sign_proof_of_delivery(tracking_number):
             if finance is None:
                 finance = ShipmentFinance(
                     tracking_number=shipment.tracking_number,
-                    invoice_amount_kes=shipment.quoted_amount_kes,
+                    invoice_amount_kes=detention_invoice_amount(shipment)[0],
                     paid_amount_kes=0,
                     updated_by_id=user.id,
                     updated_at=signed_at,
@@ -1348,24 +2701,45 @@ def sign_proof_of_delivery(tracking_number):
                 db.session.add(finance)
                 invoice_created = True
             elif finance.invoice_amount_kes is None:
-                finance.invoice_amount_kes = shipment.quoted_amount_kes
+                finance.invoice_amount_kes = detention_invoice_amount(shipment)[0]
                 finance.updated_by_id = user.id
                 finance.updated_at = signed_at
                 invoice_created = True
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
+        cleanup_generated_pdf(pod_path)
         return jsonify({'status': 'error', 'message': 'This delivery has already been signed.'}), 409
     except Exception:
         db.session.rollback()
+        cleanup_generated_pdf(pod_path)
         current_app.logger.exception('Unable to store the signed proof of delivery.')
         return jsonify({'status': 'error', 'message': 'The signed proof of delivery could not be saved.'}), 500
+    if previous_pod_path and previous_pod_path != pod_path and os.path.exists(previous_pod_path):
+        os.remove(previous_pod_path)
+
+    client_email = shipment.client_account.email if shipment.client_account else None
+    email_delivery = send_shipment_email(
+        [client_email],
+        f'Signed proof of delivery — {shipment.tracking_number}',
+        (
+            f'The delivery for shipment {shipment.tracking_number} was signed by {proof.signer_name} '
+            f'on {proof.signed_at.isoformat()}. The signed proof of delivery is attached.'
+        ),
+        attachment=signed_pdf,
+        attachment_name=f'{shipment.tracking_number}-signed-proof-of-delivery.pdf',
+    )
+    if email_delivery['status'] == 'not_sent':
+        email_delivery['message'] = f"Signed POD was saved, but {email_delivery['message'].lower()}"
+    elif email_delivery['status'] == 'failed':
+        email_delivery['message'] = f"Signed POD was saved, but {email_delivery['message'].lower()}"
 
     return jsonify({
         'status': 'success',
         'message': 'Delivery signed successfully.',
         'invoice_created': invoice_created,
         'shipment': shipment.to_dict(),
+        'email_delivery': email_delivery,
     }), 201
 
 
@@ -1388,41 +2762,48 @@ def download_proof_of_delivery(tracking_number):
     if not proof:
         return jsonify({'status': 'error', 'message': 'This delivery has not been signed yet.'}), 404
 
-    pdf = fitz.open()
-    page = pdf.new_page()
-    page.insert_text((48, 58), 'DIFAN LOGISTICS - PROOF OF DELIVERY', fontsize=16, fontname='helv')
-    detail_lines = [
-        f'Tracking reference: {shipment.tracking_number}',
-        f'Client: {shipment.company_name or "Not specified"}',
-        f'Cargo: {shipment.cargo_type} ({shipment.tonnage:g} tonnes)',
-        f'Pickup: {shipment.origin}',
-        f'Delivery: {shipment.destination}',
-        f'End customer: {shipment.end_customer_name or "Not specified"}',
-        f'Delivered at: {shipment.arrived_at.isoformat() if shipment.arrived_at else "Not recorded"}',
-        f'Received and signed by: {proof.signer_name}',
-        f'Signed at: {proof.signed_at.isoformat()}',
-    ]
-    detail_lines.append(
-        f'Agreed delivery amount (including VAT): KES {shipment.quoted_amount_kes:,.2f}'
-        if shipment.quoted_amount_kes is not None
-        else 'Agreed delivery amount: Not recorded'
-    )
-    details = '\n'.join(' '.join(line.split()) for line in detail_lines)
-    details = details.encode('latin-1', 'replace').decode('latin-1')
-    page.insert_textbox(fitz.Rect(48, 85, 547, 320), details, fontsize=11, fontname='helv', lineheight=1.5)
-    page.insert_text((48, 365), 'Customer signature', fontsize=11, fontname='helv')
-    page.insert_image(fitz.Rect(48, 380, 330, 500), stream=proof.signature_png, keep_proportion=True)
-    page.insert_textbox(
-        fitz.Rect(48, 535, 547, 590),
-        "This electronic proof of delivery records the receiving customer's confirmation of the cargo listed above.",
-        fontsize=9,
-        fontname='helv',
-    )
+    document = ShipmentDocument.query.filter_by(
+        shipment_tracking_number=shipment.tracking_number,
+        document_type='signed_pod',
+    ).first()
+    if not document or not os.path.isfile(os.path.join(
+        current_app.config['SHIPMENT_DOCUMENTS_DIR'], document.storage_filename,
+    )):
+        try:
+            contents = build_signed_pod_pdf(shipment, proof)
+            _document, path, previous_path = persist_generated_pdf(
+                shipment,
+                user,
+                'signed_pod',
+                f'{shipment.tracking_number}-signed-proof-of-delivery.pdf',
+                contents,
+            )
+            db.session.commit()
+        except OSError:
+            db.session.rollback()
+            if 'path' in locals() and os.path.exists(path):
+                os.remove(path)
+            current_app.logger.exception('Unable to restore the signed proof of delivery PDF.')
+            return jsonify({'status': 'error', 'message': 'The stored proof of delivery is unavailable.'}), 500
+        except Exception:
+            db.session.rollback()
+            if 'path' in locals() and os.path.exists(path):
+                os.remove(path)
+            current_app.logger.exception('Unable to save the signed proof of delivery PDF.')
+            return jsonify({'status': 'error', 'message': 'The signed proof of delivery could not be saved.'}), 500
+        if previous_path and previous_path != path and os.path.exists(previous_path):
+            os.remove(previous_path)
+    else:
+        path = os.path.join(current_app.config['SHIPMENT_DOCUMENTS_DIR'], document.storage_filename)
+
+    with open(path, 'rb') as document_file:
+        contents = document_file.read()
     response = send_file(
-        io.BytesIO(pdf.tobytes()),
+        io.BytesIO(contents),
         mimetype='application/pdf',
-        as_attachment=True,
+        as_attachment=request.args.get('preview') != '1',
         download_name=f'{shipment.tracking_number}-signed-proof-of-delivery.pdf',
+        conditional=False,
         max_age=0,
     )
     response.headers['Cache-Control'] = 'private, no-store'
@@ -1592,6 +2973,104 @@ def upload_shipment_documents(tracking_number):
         'documents': [document_metadata(document) for document in documents],
         'shipment': shipment.to_dict(),
     }), 201
+
+
+@shipments_bp.route('/<tracking_number>/operational-evidence', methods=['POST'])
+@jwt_required()
+def upload_operational_evidence(tracking_number):
+    user = get_request_user()
+    if not user or user.role != 'driver':
+        return jsonify({'status': 'error', 'message': 'Only the assigned driver may submit trip evidence.'}), 403
+    shipment = db.session.get(Shipment, tracking_number.strip().upper())
+    if not shipment or shipment.assigned_driver_id != user.id:
+        return jsonify({'status': 'error', 'message': 'Shipment was not found or is not assigned to your account.'}), 404
+    if shipment.status not in {'IN_TRANSIT', 'BREAKDOWN', 'DELIVERED'}:
+        return jsonify({'status': 'error', 'message': 'Trip evidence can only be attached to an active or completed shipment.'}), 409
+
+    evidence_type = request.form.get('evidence_type')
+    if evidence_type not in {'POD_PHOTO', 'TRAFFIC_PROOF'}:
+        return jsonify({'status': 'error', 'message': 'Choose a POD photo or traffic-delay proof.'}), 400
+    upload = request.files.get('image')
+    if not upload or not upload.filename:
+        return jsonify({'status': 'error', 'message': 'Choose an image to upload.'}), 400
+    contents = upload.read(MAX_DOCUMENT_BYTES + 1)
+    if not contents or len(contents) > MAX_DOCUMENT_BYTES:
+        return jsonify({'status': 'error', 'message': 'Evidence images must be between 1 byte and 12 MB.'}), 400
+    note = request.form.get('note', '').strip()
+    if not isinstance(note, str) or len(note) > 1000:
+        return jsonify({'status': 'error', 'message': 'Evidence notes must be at most 1,000 characters.'}), 400
+    if evidence_type == 'TRAFFIC_PROOF' and not note:
+        return jsonify({'status': 'error', 'message': 'Describe the traffic delay shown in the evidence.'}), 400
+
+    try:
+        with Image.open(io.BytesIO(contents)) as image:
+            image.verify()
+        with Image.open(io.BytesIO(contents)) as image:
+            image.load()
+            normalized = io.BytesIO()
+            image.convert('RGB').save(normalized, format='JPEG', quality=88, optimize=True)
+            safe_image = normalized.getvalue()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+        return jsonify({'status': 'error', 'message': 'Upload a valid JPEG, PNG, or WebP image.'}), 422
+
+    record = ShipmentOperationalEvidence(
+        shipment_tracking_number=shipment.tracking_number,
+        evidence_type=evidence_type,
+        filename=(secure_filename(upload.filename) or 'trip-evidence.jpg')[:255],
+        contents=safe_image,
+        sha256=hashlib.sha256(safe_image).hexdigest(),
+        note=note or None,
+        uploaded_by_id=user.id,
+    )
+    db.session.add(record)
+    db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'message': 'Trip evidence uploaded and integrity-checked.',
+        'evidence': record.to_dict(),
+    }), 201
+
+
+@shipments_bp.route('/<tracking_number>/operational-evidence', methods=['GET'])
+@jwt_required()
+def list_operational_evidence(tracking_number):
+    user = get_request_user()
+    shipment = db.session.get(Shipment, tracking_number.strip().upper())
+    if not user or not shipment or not shipment_visible_to(shipment, user):
+        return jsonify({'status': 'error', 'message': 'Shipment evidence was not found for this account.'}), 404
+    evidence = ShipmentOperationalEvidence.query.filter_by(
+        shipment_tracking_number=shipment.tracking_number,
+    ).order_by(ShipmentOperationalEvidence.uploaded_at.desc()).all()
+    return jsonify({
+        'status': 'success',
+        'evidence': [record.to_dict() for record in evidence],
+    }), 200
+
+
+@shipments_bp.route('/<tracking_number>/operational-evidence/<evidence_id>', methods=['GET'])
+@jwt_required()
+def download_operational_evidence(tracking_number, evidence_id):
+    user = get_request_user()
+    shipment = db.session.get(Shipment, tracking_number.strip().upper())
+    if not user or not shipment or not shipment_visible_to(shipment, user):
+        return jsonify({'status': 'error', 'message': 'Shipment evidence was not found for this account.'}), 404
+    record = db.session.get(ShipmentOperationalEvidence, evidence_id)
+    if not record or record.shipment_tracking_number != shipment.tracking_number:
+        return jsonify({'status': 'error', 'message': 'Trip evidence was not found.'}), 404
+    if not hmac.compare_digest(hashlib.sha256(record.contents).hexdigest(), record.sha256):
+        current_app.logger.error('SHA-256 validation failed for shipment evidence %s', record.id)
+        return jsonify({'status': 'error', 'message': 'Trip evidence failed integrity verification.'}), 500
+    response = send_file(
+        io.BytesIO(record.contents),
+        mimetype='image/jpeg',
+        as_attachment=True,
+        download_name=record.filename,
+        max_age=0,
+    )
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Content-Security-Policy'] = "sandbox; default-src 'none'"
+    return response
 
 
 @shipments_bp.route('/<tracking_number>/documents', methods=['GET'])

@@ -7,6 +7,12 @@
 
 // Global Application Namespace
 window.DifanApp = {
+    apiBase: String(window.DIFAN_API_BASE || '').replace(/\/$/, ''),
+    apiUrl(path) {
+        const route = String(path);
+        return `${this.apiBase}${route.startsWith('/') ? route : `/${route}`}`;
+    },
+
     // 1. GLOBAL TOAST NOTIFICATION SYSTEM
     showToast(message, type = 'success') {
         let toastContainer = document.getElementById('difan-toast-container');
@@ -93,7 +99,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('difan:session-ready', () => {
         initDashboardMetrics();
+        restoreUserPreferences();
     });
+
+    // --- PER-USER PREFERENCES (stored server-side, restored on login) ---
+    let preferenceSaveTimer = null;
+    let pendingPreferences = {};
+
+    window.DifanApp.savePreference = (patch) => {
+        const token = localStorage.getItem('jwt_token');
+        if (!token) return;
+        const { sub_tabs: subTabs, ...rest } = patch;
+        pendingPreferences = {
+            ...pendingPreferences,
+            ...rest,
+            ...(subTabs ? { sub_tabs: { ...pendingPreferences.sub_tabs, ...subTabs } } : {}),
+        };
+        clearTimeout(preferenceSaveTimer);
+        preferenceSaveTimer = setTimeout(() => {
+            const body = pendingPreferences;
+            pendingPreferences = {};
+            fetch(window.DifanApp.apiUrl('/api/auth/preferences'), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify(body),
+            }).catch(() => {});
+        }, 500);
+    };
+
+    async function restoreUserPreferences() {
+        const token = localStorage.getItem('jwt_token');
+        if (!token) return;
+        try {
+            const response = await fetch(window.DifanApp.apiUrl('/api/auth/preferences'), {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const text = await response.text();
+            if (!response.ok || !text) return;
+            const prefs = JSON.parse(text).preferences || {};
+            window.DifanApp.state.preferences = prefs;
+            window.DifanApp.state.restoringPreferences = true;
+            try {
+                const subTabs = prefs.sub_tabs || {};
+                Object.entries(subTabs).forEach(([group, tab]) => {
+                    document.querySelector(`.tab-btn[data-group="${CSS.escape(group)}"][data-tab="${CSS.escape(tab)}"]`)?.click();
+                });
+                if (prefs.active_tab && !window.DifanApp.state.workforceLockout) {
+                    const link = document.querySelector(`.nav-link[data-target-tab="${CSS.escape(prefs.active_tab)}"]`);
+                    if (link && !link.hidden && link.offsetParent !== null) link.click();
+                }
+            } finally {
+                window.DifanApp.state.restoringPreferences = false;
+            }
+        } catch (error) {
+            // Preferences are optional; ignore failures.
+        }
+    }
 
     // --- NAVIGATION ROUTER ---
     function initNavigation() {
@@ -122,6 +183,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (view.id === `view-${targetTab}`) {
                         view.style.display = 'block';
                         window.DifanApp.state.activeTab = targetTab;
+                        if (!window.DifanApp.state.restoringPreferences) {
+                            window.DifanApp.savePreference({ active_tab: targetTab });
+                        }
                     } else {
                         view.style.display = 'none';
                     }
@@ -200,6 +264,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td><code>${item.truckNo}</code></td>
                 <td><strong>${item.driverName}</strong></td>
                 <td><span class="badge badge-warning">${item.operationalStatus}</span><br><small>${item.location}</small></td>
+                <td>Not assigned</td>
+                <td>${item.mechanicTeam.find(tech => tech.role === 'Lead Mechanic')?.name || 'Not assigned'}</td>
                 <td>
                     <div><strong>Relief Vehicle:</strong> <code>${item.reliefTruck}</code></div>
                     <div style="margin-top: 6px; font-size: 0.85rem;">
@@ -306,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const headers = { 'Content-Type': 'application/json' };
             if (token) headers.Authorization = `Bearer ${token}`;
-            const response = await fetch('http://localhost:5000/api/portal/container-quote', {
+            const response = await fetch(window.DifanApp.apiUrl('/api/portal/container-quote'), {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({ size: service, quantity: amount }),

@@ -106,6 +106,7 @@ def calculate_statutory_deductions(gross_pay: float) -> dict:
         paye += rem * 0.35
 
     personal_relief = 2400.0
+    tax_charged = round(paye, 2)
     net_paye = max(0.0, round(paye - personal_relief, 2))
 
     total_deductions = round(nssf + shif + housing_levy + net_paye, 2)
@@ -116,6 +117,9 @@ def calculate_statutory_deductions(gross_pay: float) -> dict:
         "shif": shif,
         "housing_levy": housing_levy,
         "paye": net_paye,
+        "taxable_pay": round(taxable_pay, 2),
+        "tax_charged": tax_charged,
+        "personal_relief": personal_relief,
         "total_deductions": total_deductions,
         "net_pay": net_pay
     }

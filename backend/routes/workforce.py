@@ -12,19 +12,29 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import and_
+from sqlalchemy.exc import IntegrityError
 from werkzeug.utils import secure_filename
 
 from backend.models.payroll import db
 from backend.routes.auth import EMPLOYEE_ROLES, HR_ROLES, UserAccount
-from backend.routes.shipments import Shipment, ShipmentProofOfDelivery, shipment_visible_to
+from backend.routes.shipments import (
+    Shipment,
+    ShipmentGeofenceEvent,
+    ShipmentProofOfDelivery,
+    shipment_visible_to,
+)
 
 workforce_bp = Blueprint('workforce', __name__, url_prefix='/api/portal/workforce')
 DRIVER_STATUSES = {'ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'OFF_DUTY'}
 LEAVE_TYPES = {'SICK', 'VACATION'}
 CASE_TYPES = {'WRITTEN_REPRIMAND', 'MINOR_INFRACTION', 'VERBAL_WARNING'}
-CASE_SEVERITIES = {'MINOR_LATE_ARRIVAL', 'CARGO_MISMANAGEMENT', 'UNEXCUSED_ABSENCE', 'SAFETY_COMPLIANCE'}
+CASE_SEVERITIES = {
+    'MINOR_LATE_ARRIVAL', 'POD_DOCUMENTATION', 'CARGO_MISMANAGEMENT',
+    'UNEXCUSED_ABSENCE', 'SAFETY_COMPLIANCE',
+}
 SEVERITY_POINTS = {
     'MINOR_LATE_ARRIVAL': 2,
+    'POD_DOCUMENTATION': 2,
     'CARGO_MISMANAGEMENT': 5,
     'UNEXCUSED_ABSENCE': 10,
     'SAFETY_COMPLIANCE': 20,
@@ -34,6 +44,7 @@ EVIDENCE_MIME_TYPES = {'application/pdf', 'image/jpeg', 'image/png', 'image/webp
 SIGNATURE_MAX_BYTES = 512 * 1024
 NOTICE_TYPES = {'TERMS_UPDATE', 'CONSENT_AGREEMENT'}
 DISPUTE_HOURS = 72
+PAYROLL_SIGNOFF_DEFERRAL_HOURS = 12
 SCORE_WINDOW_DAYS = 90
 
 
@@ -85,6 +96,20 @@ class WorkforceNoticeAcknowledgement(db.Model):
     employee = db.relationship('UserAccount', foreign_keys=[employee_id])
 
 
+class PayrollSignoffDeferral(db.Model):
+    __tablename__ = 'payroll_signoff_deferrals'
+    __table_args__ = (
+        db.UniqueConstraint('employee_id', 'pay_period', name='uq_payroll_signoff_deferral_cycle'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=False, index=True)
+    pay_period = db.Column(db.String(20), nullable=False)
+    reason = db.Column(db.String(24), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+
+
 class WorkforceCase(db.Model):
     __tablename__ = 'workforce_cases'
 
@@ -100,6 +125,8 @@ class WorkforceCase(db.Model):
     resolved_at = db.Column(db.DateTime(timezone=True), nullable=True)
     resolved_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=True)
     resolution_note = db.Column(db.String(2000), nullable=True)
+    source_code = db.Column(db.String(40), nullable=True)
+    source_reference = db.Column(db.String(120), nullable=True)
     employee = db.relationship('UserAccount', foreign_keys=[employee_id])
     created_by = db.relationship('UserAccount', foreign_keys=[created_by_id])
     evidence = db.relationship(
@@ -123,6 +150,8 @@ class WorkforceCase(db.Model):
             'dispute_deadline_at': self.dispute_deadline_at.isoformat(),
             'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None,
             'resolution_note': self.resolution_note,
+            'source_code': self.source_code,
+            'automated': self.source_code is not None,
             'evidence': [
                 evidence.to_dict()
                 for evidence in self.evidence
@@ -188,11 +217,19 @@ class DriverRating(db.Model):
     driver_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=False, index=True)
     client_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=False)
     stars = db.Column(db.Integer, nullable=False)
+    punctuality_stars = db.Column(db.Integer, nullable=True)
+    cargo_care_stars = db.Column(db.Integer, nullable=True)
     feedback = db.Column(db.String(1000), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     driver = db.relationship('UserAccount', foreign_keys=[driver_id])
     client = db.relationship('UserAccount', foreign_keys=[client_id])
     shipment = db.relationship('Shipment')
+
+    @property
+    def trust_rating(self):
+        punctuality = self.punctuality_stars if self.punctuality_stars is not None else self.stars
+        cargo_care = self.cargo_care_stars if self.cargo_care_stars is not None else self.stars
+        return (punctuality + cargo_care) / 2
 
 
 class ClientRating(db.Model):
@@ -227,7 +264,10 @@ class SafetyEmergencyReport(db.Model):
     location = db.Column(db.String(200), nullable=False)
     description = db.Column(db.String(2000), nullable=False)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    resolved_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    resolved_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=True)
     employee = db.relationship('UserAccount', foreign_keys=[employee_id])
+    resolved_by = db.relationship('UserAccount', foreign_keys=[resolved_by_id])
 
 
 def parse_signature(data):
@@ -474,6 +514,38 @@ def case_penalty(case, now):
     return SEVERITY_POINTS[case.severity] * max(0.0, 1 - age_days / SCORE_WINDOW_DAYS)
 
 
+def create_automated_driver_warning(driver, source_code, source_reference, severity, details, now):
+    if source_code not in {
+        'LATE_WITHOUT_TRAFFIC_PROOF',
+        'MISSING_POD_PHOTO',
+        'ELD_HOS_VIOLATION',
+        'UNAUTHORIZED_VEHICLE_DOWNTIME',
+    }:
+        raise ValueError('Unsupported automated workforce warning rule.')
+    if severity not in SEVERITY_POINTS:
+        raise ValueError('Unsupported automated workforce warning severity.')
+    if WorkforceCase.query.filter_by(
+        source_code=source_code,
+        source_reference=source_reference,
+    ).first():
+        return None
+    case = WorkforceCase(
+        employee_id=driver.id,
+        created_by_id=driver.id,
+        case_type='MINOR_INFRACTION',
+        severity=severity,
+        details=details,
+        status='DISPUTE_OPEN',
+        created_at=now,
+        dispute_deadline_at=now + timedelta(hours=DISPUTE_HOURS),
+        source_code=source_code,
+        source_reference=source_reference,
+    )
+    db.session.add(case)
+    db.session.flush()
+    return case
+
+
 def driver_score(driver, performance_since=None):
     now = datetime.now(timezone.utc)
     since = (now - timedelta(days=SCORE_WINDOW_DAYS)).replace(tzinfo=None)
@@ -513,7 +585,7 @@ def driver_score(driver, performance_since=None):
     )
     safety_score = max(0.0, 100.0 - safety_penalty)
     customer_rating = (
-        sum(rating.stars for rating in rating_rows) / len(rating_rows) * 20
+        sum(rating.trust_rating for rating in rating_rows) / len(rating_rows) * 20
         if rating_rows else 100.0
     )
     dated_shipments = [shipment for shipment in shipments if shipment.delivery_due_at is not None]
@@ -557,7 +629,7 @@ def employee_acknowledgement_status(user):
 
     if not user or user.role not in EMPLOYEE_ROLES:
         return {'must_acknowledge': False, 'pending_slips': [], 'pending_notices': []}
-    pending_slips = PayrollSlip.query.filter(
+    all_pending_slips = PayrollSlip.query.filter(
         PayrollSlip.employee_id == user.id,
         PayrollSlip.status == 'APPROVED',
         db.or_(
@@ -570,6 +642,16 @@ def employee_acknowledgement_status(user):
             ),
         ),
     ).order_by(PayrollSlip.pay_period).all()
+    now = datetime.now(timezone.utc)
+    active_deferrals = PayrollSignoffDeferral.query.filter(
+        PayrollSignoffDeferral.employee_id == user.id,
+        PayrollSignoffDeferral.expires_at > now,
+    ).all()
+    deferred_periods = {record.pay_period for record in active_deferrals}
+    pending_slips = [
+        slip for slip in all_pending_slips
+        if slip.pay_period not in deferred_periods
+    ]
     acknowledged_ids = db.select(
         WorkforceNoticeAcknowledgement.notice_id,
     ).filter_by(employee_id=user.id)
@@ -581,7 +663,31 @@ def employee_acknowledgement_status(user):
         'must_acknowledge': bool(pending_slips or pending_notices),
         'pending_slips': pending_slips,
         'pending_notices': pending_notices,
+        'deferred_slips': [
+            {
+                'pay_period': record.pay_period,
+                'expires_at': record.expires_at.isoformat(),
+            }
+            for record in active_deferrals
+        ],
     }
+
+
+def active_duty_deferral_reason(user):
+    if not user or user.role != 'driver':
+        return None
+    active_load = Shipment.query.filter(
+        Shipment.assigned_driver_id == user.id,
+        Shipment.status.in_({'IN_TRANSIT', 'BREAKDOWN'}),
+    ).first()
+    if active_load:
+        return 'ACTIVE_LOAD'
+    if SafetyEmergencyReport.query.filter_by(
+        employee_id=user.id,
+        resolved_at=None,
+    ).first():
+        return 'OPEN_EMERGENCY'
+    return None
 
 
 def _manager():
@@ -662,12 +768,18 @@ def install_workforce_lockout(app):
             or path == f'{workforce_bp.url_prefix}/pending'
             or path == f'{workforce_bp.url_prefix}/cases'
             and request.method == 'GET'
+            or path == f'{workforce_bp.url_prefix}/payroll-signoff-deferral'
+            and request.method == 'POST'
             or bool(re.fullmatch(rf'{re.escape(workforce_bp.url_prefix)}/cases/\d+/dispute', path))
             and request.method == 'POST'
             or bool(re.fullmatch(rf'{re.escape(workforce_bp.url_prefix)}/cases/\d+/evidence/\d+', path))
             and request.method == 'GET'
             or path.startswith('/api/portal/payroll')
-            and (request.method == 'GET' or path.endswith('/sign') and request.method == 'POST')
+            and (
+                request.method == 'GET'
+                or path.endswith('/sign') and request.method == 'POST'
+                or path.endswith('/dispute') and request.method == 'POST'
+            )
             or path.startswith(f'{workforce_bp.url_prefix}/notices/')
             and path.endswith('/acknowledge')
             and request.method == 'POST'
@@ -702,7 +814,75 @@ def get_pending_acknowledgements():
         'must_acknowledge': pending['must_acknowledge'],
         'pending_slips': [slip.to_dict() for slip in pending['pending_slips']],
         'pending_notices': [notice.to_dict() for notice in pending['pending_notices']],
+        'deferred_slips': pending['deferred_slips'],
+        'can_defer_signoff': bool(
+            active_duty_deferral_reason(user) and pending['pending_slips']
+        ),
+        'active_duty_reason': active_duty_deferral_reason(user),
     }), 200
+
+
+@workforce_bp.post('/payroll-signoff-deferral')
+@jwt_required()
+def defer_payroll_signoff():
+    user = current_user()
+    if not user or user.role != 'driver' or user.account_status != 'active':
+        return jsonify({'status': 'error', 'message': 'Only active drivers may defer paystub sign-off.'}), 403
+    reason = active_duty_deferral_reason(user)
+    if not reason:
+        return jsonify({
+            'status': 'error',
+            'message': 'A deferral is available only during an active load or an unresolved safety emergency.',
+        }), 409
+    data = request.get_json(silent=True)
+    pay_period = data.get('pay_period') if isinstance(data, dict) else None
+    if not isinstance(pay_period, str) or not pay_period.strip() or len(pay_period) > 20:
+        return jsonify({'status': 'error', 'message': 'Choose the payroll cycle to defer.'}), 400
+    pay_period = pay_period.strip()
+    from backend.routes.portal import PayrollSlip
+
+    slip = PayrollSlip.query.filter(
+        PayrollSlip.employee_id == user.id,
+        PayrollSlip.pay_period == pay_period,
+        PayrollSlip.status == 'APPROVED',
+        db.or_(
+            PayrollSlip.receipt_signed_at.is_(None),
+            PayrollSlip.paystub_signed_at.is_(None),
+            PayrollSlip.signed_pdf_sha256.is_(None),
+            and_(
+                PayrollSlip.salary_advance > 0,
+                PayrollSlip.advance_signed_at.is_(None),
+            ),
+        ),
+    ).first()
+    if not slip:
+        return jsonify({'status': 'error', 'message': 'No pending paystub sign-off exists for that payroll cycle.'}), 404
+    if PayrollSignoffDeferral.query.filter_by(
+        employee_id=user.id,
+        pay_period=pay_period,
+    ).first():
+        return jsonify({'status': 'error', 'message': 'The 12-hour deferral has already been used for this payroll cycle.'}), 409
+
+    now = datetime.now(timezone.utc)
+    deferral = PayrollSignoffDeferral(
+        employee_id=user.id,
+        pay_period=pay_period,
+        reason=reason,
+        created_at=now,
+        expires_at=now + timedelta(hours=PAYROLL_SIGNOFF_DEFERRAL_HOURS),
+    )
+    db.session.add(deferral)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': 'The 12-hour deferral has already been used for this payroll cycle.'}), 409
+    return jsonify({
+        'status': 'success',
+        'message': f'Paystub sign-off is deferred for 12 hours. Complete it before {deferral.expires_at.isoformat()}.',
+        'pay_period': pay_period,
+        'expires_at': deferral.expires_at.isoformat(),
+    }), 201
 
 
 @workforce_bp.get('/drivers')
@@ -877,6 +1057,11 @@ def resolve_workforce_case(case_id):
         return jsonify({'status': 'error', 'message': 'Choose whether the infraction is upheld after review.'}), 400
     if case.status not in {'UNDER_REVIEW', 'DISPUTE_OPEN'}:
         return jsonify({'status': 'error', 'message': 'This HR record has already been resolved.'}), 409
+    if case.status == 'DISPUTE_OPEN' and effective_case_status(case) == 'DISPUTE_OPEN':
+        return jsonify({
+            'status': 'error',
+            'message': 'The driver’s 72-hour rebuttal window is still open. Review a submitted rebuttal or wait for the deadline before resolving this record.',
+        }), 409
     resolution_note = data.get('resolution_note', '')
     if not isinstance(resolution_note, str) or len(resolution_note) > 2000:
         return jsonify({'status': 'error', 'message': 'The resolution note must be at most 2,000 characters.'}), 400
@@ -1133,8 +1318,18 @@ def rate_completed_shipment(tracking_number):
         return jsonify({'status': 'error', 'message': 'A rating is available after signed proof of delivery.'}), 409
     data = request.get_json(silent=True)
     stars = data.get('stars') if isinstance(data, dict) else None
+    punctuality = data.get('punctuality_stars') if isinstance(data, dict) else None
+    cargo_care = data.get('cargo_care_stars') if isinstance(data, dict) else None
+    if punctuality is not None or cargo_care is not None:
+        dimensions = (punctuality, cargo_care)
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 5
+            for value in dimensions
+        ):
+            return jsonify({'status': 'error', 'message': 'Choose one-to-five stars for punctuality and cargo care.'}), 400
+        stars = round((punctuality + cargo_care) / 2)
     feedback = data.get('feedback', '') if isinstance(data, dict) else ''
-    if isinstance(stars, bool) or not isinstance(stars, int) or not 1 <= stars <= 5:
+    if isinstance(stars, bool) or not isinstance(stars, (int, float)) or not 1 <= stars <= 5:
         return jsonify({'status': 'error', 'message': 'Choose a rating from one to five stars.'}), 400
     if not isinstance(feedback, str) or len(feedback) > 1000:
         return jsonify({'status': 'error', 'message': 'Rating feedback must be at most 1,000 characters.'}), 400
@@ -1146,6 +1341,8 @@ def rate_completed_shipment(tracking_number):
         driver_id=shipment.assigned_driver_id,
         client_id=user.id,
         stars=stars,
+        punctuality_stars=punctuality if punctuality is not None else stars,
+        cargo_care_stars=cargo_care if cargo_care is not None else stars,
         feedback=feedback.strip() or None,
     )
     db.session.add(rating)
@@ -1173,6 +1370,8 @@ def get_shipment_rating(tracking_number):
         'already_rated': rating is not None,
         'rating': {
             'stars': rating.stars,
+            'punctuality_stars': rating.punctuality_stars or rating.stars,
+            'cargo_care_stars': rating.cargo_care_stars or rating.stars,
             'feedback': rating.feedback,
             'created_at': rating.created_at.isoformat(),
         } if rating and rating.client_id == user.id else None,
@@ -1308,6 +1507,107 @@ def client_ratings_leaderboard():
     }), 200
 
 
+def distribution_center_delay_rows(shipment_ids=None):
+    query = ShipmentGeofenceEvent.query.filter_by(site_type='PICKUP')
+    if shipment_ids is not None:
+        if not shipment_ids:
+            return []
+        query = query.filter(ShipmentGeofenceEvent.shipment_tracking_number.in_(shipment_ids))
+    events = query.order_by(ShipmentGeofenceEvent.recorded_at, ShipmentGeofenceEvent.id).all()
+    visits = {}
+    groups = {}
+    for event in events:
+        key = (event.shipment_tracking_number, event.facility_name)
+        if event.event_type == 'ARRIVE':
+            visits[key] = event.recorded_at
+        elif event.event_type == 'DEPART' and key in visits:
+            started_at = visits.pop(key)
+            start = started_at if started_at.tzinfo else started_at.replace(tzinfo=timezone.utc)
+            end = event.recorded_at if event.recorded_at.tzinfo else event.recorded_at.replace(tzinfo=timezone.utc)
+            elapsed = max(0.0, (end - start).total_seconds() / 3600)
+            shipment = db.session.get(Shipment, event.shipment_tracking_number)
+            facility = groups.setdefault(event.facility_name, {
+                'facility_name': event.facility_name,
+                'completed_visits': 0,
+                'total_delay_hours': 0.0,
+                'longest_delay_hours': 0.0,
+                'detention_charges_kes': 0.0,
+                'shipment_count': set(),
+            })
+            facility['completed_visits'] += 1
+            facility['total_delay_hours'] += elapsed
+            facility['longest_delay_hours'] = max(facility['longest_delay_hours'], elapsed)
+            facility['detention_charges_kes'] += elapsed * (shipment.detention_rate_kes_per_hour or 0) if shipment else 0
+            facility['shipment_count'].add(event.shipment_tracking_number)
+
+    for (tracking_number, facility_name), started_at in visits.items():
+        facility = groups.setdefault(facility_name, {
+            'facility_name': facility_name,
+            'completed_visits': 0,
+            'total_delay_hours': 0.0,
+            'longest_delay_hours': 0.0,
+            'detention_charges_kes': 0.0,
+            'shipment_count': set(),
+        })
+        facility['open_visits'] = facility.get('open_visits', 0) + 1
+        facility['shipment_count'].add(tracking_number)
+        start = started_at if started_at.tzinfo else started_at.replace(tzinfo=timezone.utc)
+        elapsed = max(0.0, (datetime.now(timezone.utc) - start).total_seconds() / 3600)
+        shipment = db.session.get(Shipment, tracking_number)
+        facility['current_open_delay_hours'] = facility.get('current_open_delay_hours', 0.0) + elapsed
+        facility['detention_charges_kes'] += elapsed * (shipment.detention_rate_kes_per_hour or 0) if shipment else 0
+
+    rows = []
+    for facility in groups.values():
+        completed = facility['completed_visits']
+        rows.append({
+            'facility_name': facility['facility_name'],
+            'completed_visits': completed,
+            'open_visits': facility.get('open_visits', 0),
+            'shipments_seen': len(facility['shipment_count']),
+            'average_delay_hours': round(
+                facility['total_delay_hours'] / completed if completed else 0, 2,
+            ),
+            'longest_delay_hours': round(facility['longest_delay_hours'], 2),
+            'current_open_delay_hours': round(facility.get('current_open_delay_hours', 0), 2),
+            'detention_charges_kes': round(facility['detention_charges_kes'], 2),
+        })
+    rows.sort(key=lambda item: (
+        -item['longest_delay_hours'],
+        -item['average_delay_hours'],
+        item['facility_name'].casefold(),
+    ))
+    return rows
+
+
+@workforce_bp.get('/distribution-center-delays')
+@jwt_required()
+def distribution_center_delays():
+    if not _manager():
+        return jsonify({'status': 'error', 'message': 'HR access is required to view distribution-center delays.'}), 403
+    return jsonify({
+        'status': 'success',
+        'facilities': distribution_center_delay_rows(),
+    }), 200
+
+
+@workforce_bp.get('/client-distribution-center-delays')
+@jwt_required()
+def client_distribution_center_delays():
+    user = current_user()
+    if not user or user.role != 'client':
+        return jsonify({'status': 'error', 'message': 'Client access is required to view your warehouse delay report.'}), 403
+    shipment_ids = [
+        shipment.tracking_number
+        for shipment in Shipment.query.order_by(Shipment.created_at.desc()).all()
+        if shipment_visible_to(shipment, user)
+    ]
+    return jsonify({
+        'status': 'success',
+        'facilities': distribution_center_delay_rows(shipment_ids),
+    }), 200
+
+
 @workforce_bp.get('/hr-dashboard')
 @jwt_required()
 def hr_dashboard():
@@ -1315,22 +1615,30 @@ def hr_dashboard():
     if not manager:
         return jsonify({'status': 'error', 'message': 'HR access is required.'}), 403
     drivers = UserAccount.query.filter_by(role='driver').all()
+    ranked_drivers = [
+        {
+            'id': driver.id,
+            'name': driver.display_name or driver.driver_name or driver.email,
+            'driver_id': driver.driver_code or str(driver.id),
+            'employment_status': driver.employment_status,
+            'leave_type': driver.leave_type,
+            'status_note': driver.employment_status_note,
+            'score': driver_score(driver),
+        }
+        for driver in drivers
+    ]
+    ranked_drivers.sort(key=lambda item: (-item['score']['score'], item['name'].casefold(), item['id']))
+    for rank, driver in enumerate(ranked_drivers, start=1):
+        driver['rank'] = rank
     cases = WorkforceCase.query.order_by(WorkforceCase.created_at.desc()).limit(200).all()
     emergencies = SafetyEmergencyReport.query.order_by(SafetyEmergencyReport.created_at.desc()).limit(100).all()
     return jsonify({
         'status': 'success',
-        'drivers': [
-            {
-                'id': driver.id,
-                'name': driver.display_name or driver.driver_name or driver.email,
-                'driver_id': driver.driver_code or str(driver.id),
-                'employment_status': driver.employment_status,
-                'leave_type': driver.leave_type,
-                'status_note': driver.employment_status_note,
-                'score': driver_score(driver),
-            }
-            for driver in drivers
-        ],
+        'drivers': ranked_drivers,
+        'availability_counts': {
+            status: sum(driver.employment_status == status for driver in drivers)
+            for status in DRIVER_STATUSES
+        },
         'cases': [case.to_dict() for case in cases],
         'emergencies': [
             {
@@ -1342,6 +1650,8 @@ def hr_dashboard():
                 'location': report.location,
                 'description': report.description,
                 'created_at': report.created_at.isoformat(),
+                'is_open': report.resolved_at is None,
+                'resolved_at': report.resolved_at.isoformat() if report.resolved_at else None,
             }
             for report in emergencies
         ],
@@ -1408,3 +1718,24 @@ def report_emergency():
         'reference': f'SAFE-{report.id:06d}',
         'created_at': report.created_at.isoformat(),
     }), 201
+
+
+@workforce_bp.patch('/emergency/<int:report_id>/resolve')
+@jwt_required()
+def resolve_emergency_report(report_id):
+    manager = _manager()
+    if not manager:
+        return jsonify({'status': 'error', 'message': 'HR access is required to close a safety emergency.'}), 403
+    report = db.session.get(SafetyEmergencyReport, report_id)
+    if not report:
+        return jsonify({'status': 'error', 'message': 'Safety emergency report was not found.'}), 404
+    if report.resolved_at:
+        return jsonify({'status': 'error', 'message': 'This safety emergency is already closed.'}), 409
+    report.resolved_at = datetime.now(timezone.utc)
+    report.resolved_by_id = manager.id
+    db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'message': f'SAFE-{report.id:06d} closed.',
+        'resolved_at': report.resolved_at.isoformat(),
+    }), 200

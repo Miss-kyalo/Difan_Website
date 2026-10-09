@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     submit.disabled = true;
     status.textContent = 'Sending your transport enquiry...';
     try {
-      const response = await fetch('http://localhost:5000/api/portal/transport-enquiries', {
+      const response = await fetch(window.DifanApp.apiUrl('/api/portal/transport-enquiries'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

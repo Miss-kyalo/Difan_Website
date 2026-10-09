@@ -30,6 +30,8 @@ def create_app(test_config=None):
     app.config['JWT_SECRET_KEY'] = app.config['SECRET_KEY']
     app.config['SENDGRID_API_KEY'] = os.getenv('SENDGRID_API_KEY')
     app.config['MAIL_FROM_EMAIL'] = os.getenv('MAIL_FROM_EMAIL')
+    app.config['PUBLIC_APP_URL'] = os.getenv('PUBLIC_APP_URL')
+    app.config['ELD_WEBHOOK_SECRET'] = os.getenv('ELD_WEBHOOK_SECRET')
     app.config['MAIN_ACCOUNT_EMAIL'] = os.getenv(
         'MAIN_ACCOUNT_EMAIL', 'info@difan-logistics.com'
     )
@@ -111,6 +113,11 @@ def create_app(test_config=None):
                 ('employment_status_updated_by_id', 'INTEGER REFERENCES user_accounts(id)'),
                 ('leaderboard_opt_in', 'BOOLEAN NOT NULL DEFAULT 0'),
                 ('leaderboard_handle', 'VARCHAR(40)'),
+                ('ui_preferences', 'TEXT'),
+                ('phone', 'VARCHAR(40)'),
+                ('kra_pin', 'VARCHAR(11)'),
+                ('nssf_number', 'VARCHAR(20)'),
+                ('shif_number', 'VARCHAR(20)'),
             ):
                 if column not in user_columns:
                     connection.execute(text(
@@ -128,6 +135,39 @@ def create_app(test_config=None):
                 "UPDATE user_accounts SET role = 'admin' "
                 "WHERE lower(email) = 'admin@difanlogistics.com'"
             ))
+            if inspect(db.engine).has_table('anonymous_reports'):
+                report_columns = {
+                    column['name'] for column in inspect(db.engine).get_columns('anonymous_reports')
+                }
+                if 'status' not in report_columns:
+                    connection.execute(text(
+                        "ALTER TABLE anonymous_reports ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'RECEIVED'"
+                    ))
+                if 'status_updated_at' not in report_columns:
+                    connection.execute(text(
+                        "ALTER TABLE anonymous_reports ADD COLUMN status_updated_at DATETIME"
+                    ))
+            if inspect(db.engine).has_table('vehicle_mileage_records'):
+                mileage_columns = {
+                    column['name'] for column in inspect(db.engine).get_columns('vehicle_mileage_records')
+                }
+                if 'shipment_tracking_number' not in mileage_columns:
+                    connection.execute(text(
+                        "ALTER TABLE vehicle_mileage_records ADD COLUMN shipment_tracking_number VARCHAR(40)"
+                    ))
+                if 'mileage_amount_issued_kes' not in mileage_columns:
+                    connection.execute(text(
+                        "ALTER TABLE vehicle_mileage_records ADD COLUMN mileage_amount_issued_kes FLOAT NOT NULL DEFAULT 0"
+                    ))
+            if inspect(db.engine).has_table('payroll_slips'):
+                payroll_columns = {
+                    column['name'] for column in inspect(db.engine).get_columns('payroll_slips')
+                }
+                for column_name in ('housing_allowance', 'off_duty_days', 'off_duty_pay'):
+                    if column_name not in payroll_columns:
+                        connection.execute(text(
+                            f"ALTER TABLE payroll_slips ADD COLUMN {column_name} FLOAT NOT NULL DEFAULT 0"
+                        ))
             shipment_columns = {
                 column['name'] for column in inspect(db.engine).get_columns('shipments')
             } if inspect(db.engine).has_table('shipments') else set()
@@ -144,7 +184,12 @@ def create_app(test_config=None):
                 ('end_customer_name', 'VARCHAR(200)'),
                 ('end_customer_address', 'VARCHAR(300)'),
                 ('end_customer_phone', 'VARCHAR(40)'),
+                ('end_customer_email', 'VARCHAR(254)'),
+                ('public_tracking_token_hash', 'VARCHAR(64)'),
+                ('public_tracking_token_ciphertext', 'VARCHAR(255)'),
+                ('public_tracking_expires_at', 'DATETIME'),
                 ('quoted_amount_kes', 'FLOAT'),
+                ('detention_rate_kes_per_hour', 'FLOAT NOT NULL DEFAULT 0'),
                 ('destination_change_request', 'TEXT'),
                 ('client_user_id', 'INTEGER REFERENCES user_accounts(id)'),
             ):
@@ -154,6 +199,10 @@ def create_app(test_config=None):
                     ))
             connection.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_shipments_client_user_id ON shipments (client_user_id)"
+            ))
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_shipments_public_tracking_token_hash "
+                "ON shipments (public_tracking_token_hash)"
             ))
             spare_columns = {
                 column['name'] for column in inspect(db.engine).get_columns('fleet_spare_parts')
@@ -175,6 +224,8 @@ def create_app(test_config=None):
                 ('findings', 'VARCHAR(2000)'),
                 ('action_taken', 'VARCHAR(2000)'),
                 ('parts_used', 'VARCHAR(1000)'),
+                ('replacement_driver', 'VARCHAR(120)'),
+                ('mechanic_in_charge', 'VARCHAR(120)'),
             ):
                 if column not in breakdown_columns:
                     connection.execute(text(
@@ -201,10 +252,47 @@ def create_app(test_config=None):
                 ('personal_relief', 'FLOAT'),
                 ('other_reliefs', 'FLOAT'),
                 ('paye_tax', 'FLOAT'),
+                ('dispute_message', 'VARCHAR(2000)'),
+                ('dispute_submitted_at', 'DATETIME'),
+                ('dispute_status', 'VARCHAR(24)'),
             ):
                 if column not in payroll_columns:
                     connection.execute(text(
                         f'ALTER TABLE payroll_slips ADD COLUMN {column} {definition}'
+                    ))
+            driver_rating_columns = {
+                column['name'] for column in inspect(db.engine).get_columns('driver_ratings')
+            } if inspect(db.engine).has_table('driver_ratings') else set()
+            for column in ('punctuality_stars', 'cargo_care_stars'):
+                if column not in driver_rating_columns:
+                    connection.execute(text(
+                        f'ALTER TABLE driver_ratings ADD COLUMN {column} INTEGER'
+                    ))
+            workforce_case_columns = {
+                column['name'] for column in inspect(db.engine).get_columns('workforce_cases')
+            } if inspect(db.engine).has_table('workforce_cases') else set()
+            for column, definition in (
+                ('source_code', 'VARCHAR(40)'),
+                ('source_reference', 'VARCHAR(120)'),
+            ):
+                if column not in workforce_case_columns:
+                    connection.execute(text(
+                        f'ALTER TABLE workforce_cases ADD COLUMN {column} {definition}'
+                    ))
+            connection.execute(text(
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_workforce_case_automated_source '
+                'ON workforce_cases (source_code, source_reference)'
+            ))
+            emergency_columns = {
+                column['name'] for column in inspect(db.engine).get_columns('safety_emergency_reports')
+            } if inspect(db.engine).has_table('safety_emergency_reports') else set()
+            for column, definition in (
+                ('resolved_at', 'DATETIME'),
+                ('resolved_by_id', 'INTEGER REFERENCES user_accounts(id)'),
+            ):
+                if column not in emergency_columns:
+                    connection.execute(text(
+                        f'ALTER TABLE safety_emergency_reports ADD COLUMN {column} {definition}'
                     ))
         seed_demo_shipment()
         if not app.config.get('TESTING'):

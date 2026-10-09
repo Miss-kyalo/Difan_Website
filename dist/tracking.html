@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Secure shipment tracking | DIFAN Logistics</title>
+    <style>
+      body { min-height: 100vh; margin: 0; background: #f5f4ef; color: #1c2421; }
+      .public-tracking-shell { width: min(100% - 32px, 760px); margin: 48px auto; }
+      .public-tracking-card { padding: 28px; border: 1px solid #d8d3c8; border-top: 4px solid #1b3b2b; border-radius: 6px; background: #fffdf8; box-shadow: 0 16px 40px rgba(27, 59, 43, 0.1); }
+      .public-tracking-card h1 { margin-top: 0; color: #1b3b2b; }
+      .public-tracking-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; margin: 24px 0; }
+      .public-tracking-grid > div { padding: 16px; border: 1px solid #e2ded4; border-radius: 4px; }
+      .public-tracking-label { display: block; margin-bottom: 6px; color: #65706a; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+      .public-tracking-value { font-weight: 700; }
+      .public-tracking-note { color: #65706a; font-size: 13px; }
+      #public-tracking-status { min-height: 24px; color: #5a6560; }
+      #public-tracking-status[data-state="error"] { color: #8b2626; }
+    </style>
+    <link rel="stylesheet" crossorigin href="/assets/style-BbZyGL7s.css">
+  </head>
+  <body>
+    <main class="public-tracking-shell">
+      <section class="public-tracking-card" aria-labelledby="public-tracking-heading">
+        <p id="public-tracking-company" class="muted">DIFAN LOGISTICS</p>
+        <h1 id="public-tracking-heading">Secure shipment tracking</h1>
+        <p id="public-tracking-status" role="status" aria-live="polite">Loading the latest shipment update…</p>
+        <div id="public-tracking-content" hidden>
+          <div class="public-tracking-grid">
+            <div><span class="public-tracking-label">Reference</span><span id="public-tracking-reference" class="public-tracking-value"></span></div>
+            <div><span class="public-tracking-label">Current status</span><span id="public-tracking-state" class="public-tracking-value"></span></div>
+            <div><span class="public-tracking-label">From</span><span id="public-tracking-origin" class="public-tracking-value"></span></div>
+            <div><span class="public-tracking-label">To</span><span id="public-tracking-destination" class="public-tracking-value"></span></div>
+            <div><span class="public-tracking-label">Scheduled delivery deadline</span><span id="public-tracking-deadline" class="public-tracking-value"></span></div>
+            <div><span class="public-tracking-label">Last update</span><span id="public-tracking-updated" class="public-tracking-value"></span></div>
+          </div>
+          <p class="public-tracking-note">This private link shows shipment event updates and the scheduled delivery window. It does not expose a driver's live location. For a live operational update, contact your shipper.</p>
+        </div>
+      </section>
+    </main>
+    <script src="/js/publicTracking.js"></script>
+  </body>
+</html>

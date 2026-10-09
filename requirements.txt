@@ -13,3 +13,5 @@ Pillow
 PyMuPDF
 rapidocr-onnxruntime
 boto3
+qrcode>=8.0,<9
+cryptography>=42,<47

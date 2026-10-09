@@ -1,17 +1,29 @@
+import hashlib
+import hmac
+import io
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from PIL import Image, UnidentifiedImageError
+from werkzeug.utils import secure_filename
 
 from backend.models.payroll import db
-from backend.routes.auth import ADMIN_ROLES, UserAccount
+from backend.routes.auth import EMPLOYEE_ROLES, ADMIN_ROLES, UserAccount
 from backend.routes.shipments import TRUCK_TYPES
 
 fleet_bp = Blueprint('fleet', __name__, url_prefix='/api/fleet')
 FLEET_MANAGER_ROLES = ADMIN_ROLES
 VEHICLE_STATUSES = {'AVAILABLE', 'ASSIGNED', 'MAINTENANCE', 'BREAKDOWN'}
 BREAKDOWN_SEVERITIES = {'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'}
+CERTIFICATE_TYPES = {
+    'INSURANCE': 'Insurance',
+    'INSPECTION': 'Inspection',
+    'SPEED_GOVERNOR': 'Speed Governor',
+}
+CERTIFICATE_IMAGE_MAX_BYTES = 12 * 1024 * 1024
+Image.MAX_IMAGE_PIXELS = 40_000_000
 
 
 class FleetVehicle(db.Model):
@@ -91,10 +103,115 @@ class FleetVehicle(db.Model):
             ),
             'last_mileage_recorded_at': last_mileage.recorded_at.isoformat() if last_mileage else None,
             'breakdowns_last_12_months': breakdown_count,
+            'certificates': vehicle_certificate_status(self),
+            'dispatch_eligible': bool(
+                self.assigned_driver and not vehicle_dispatch_block_reason(self.assigned_driver)
+            ),
             'parts_due': parts_due,
             'spare_history': [change.to_dict() for change in spare_history],
             'breakdown_history': [breakdown.to_dict() for breakdown in breakdown_history],
         }
+
+
+class FleetVehicleCertificate(db.Model):
+    __tablename__ = 'fleet_vehicle_certificates'
+
+    id = db.Column(db.Integer, primary_key=True)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey('fleet_vehicles.id'), nullable=False, index=True)
+    certificate_type = db.Column(db.String(24), nullable=False, index=True)
+    expires_on = db.Column(db.Date, nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    contents = db.Column(db.LargeBinary, nullable=False)
+    sha256 = db.Column(db.String(64), nullable=False)
+    status = db.Column(db.String(16), nullable=False, default='PENDING', index=True)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=False)
+    uploaded_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    reviewed_by_id = db.Column(db.Integer, db.ForeignKey('user_accounts.id'), nullable=True)
+    reviewed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    review_note = db.Column(db.String(500), nullable=True)
+    vehicle = db.relationship('FleetVehicle', foreign_keys=[vehicle_id])
+    uploaded_by = db.relationship('UserAccount', foreign_keys=[uploaded_by_id])
+    reviewed_by = db.relationship('UserAccount', foreign_keys=[reviewed_by_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'vehicle_id': self.vehicle_id,
+            'registration': self.vehicle.registration,
+            'certificate_type': self.certificate_type,
+            'certificate_label': CERTIFICATE_TYPES[self.certificate_type],
+            'expires_on': self.expires_on.isoformat(),
+            'filename': self.filename,
+            'sha256': self.sha256,
+            'status': self.status,
+            'uploaded_by': (
+                self.uploaded_by.display_name or self.uploaded_by.email if self.uploaded_by else None
+            ),
+            'uploaded_at': self.uploaded_at.isoformat(),
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'review_note': self.review_note,
+            'download_url': f'/api/fleet/certificates/{self.id}/document',
+        }
+
+
+def vehicle_certificate_status(vehicle, today=None):
+    as_of = today or date.today()
+    records = []
+    for certificate_type, label in CERTIFICATE_TYPES.items():
+        certificate = FleetVehicleCertificate.query.filter_by(
+            vehicle_id=vehicle.id,
+            certificate_type=certificate_type,
+            status='APPROVED',
+        ).order_by(
+            FleetVehicleCertificate.expires_on.desc(),
+            FleetVehicleCertificate.uploaded_at.desc(),
+        ).first()
+        pending_count = FleetVehicleCertificate.query.filter_by(
+            vehicle_id=vehicle.id,
+            certificate_type=certificate_type,
+            status='PENDING',
+        ).count()
+        days_remaining = (certificate.expires_on - as_of).days if certificate else None
+        if certificate is None or days_remaining <= 5:
+            indicator = 'RED'
+        elif days_remaining <= 15:
+            indicator = 'YELLOW'
+        else:
+            indicator = 'GREEN'
+        records.append({
+            'certificate_type': certificate_type,
+            'label': label,
+            'expires_on': certificate.expires_on.isoformat() if certificate else None,
+            'days_remaining': days_remaining,
+            'indicator': indicator,
+            'blocked': indicator == 'RED',
+            'pending_count': pending_count,
+            'certificate_id': certificate.id if certificate else None,
+        })
+    return records
+
+
+def vehicle_dispatch_block_reason(driver):
+    if not driver:
+        return 'No active driver is assigned to this truck.'
+    if driver.account_status != 'active' or driver.employment_status != 'ACTIVE':
+        return 'The assigned driver is not active and available for dispatch.'
+    vehicle = FleetVehicle.query.filter_by(assigned_driver_id=driver.id).first()
+    if not vehicle:
+        return None
+    if vehicle.status in {'MAINTENANCE', 'BREAKDOWN'}:
+        return f'{vehicle.registration} is marked {vehicle.status.lower()} and unavailable for dispatch.'
+    blocked = [
+        certificate['label']
+        for certificate in vehicle_certificate_status(vehicle)
+        if certificate['blocked']
+    ]
+    if blocked:
+        return (
+            f'{vehicle.registration} is blocked: provide and approve current '
+            f'{", ".join(blocked)} certificate(s).'
+        )
+    return None
 
 
 class VehicleMileageRecord(db.Model):
@@ -107,6 +224,8 @@ class VehicleMileageRecord(db.Model):
     odometer_km = db.Column(db.Float, nullable=False)
     distance_since_last_km = db.Column(db.Float, nullable=False, default=0)
     trip_reference = db.Column(db.String(40), nullable=True)
+    shipment_tracking_number = db.Column(db.String(40), nullable=True, index=True)
+    mileage_amount_issued_kes = db.Column(db.Float, nullable=False, default=0)
     notes = db.Column(db.String(500), nullable=True)
     recorded_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     driver = db.relationship('UserAccount', foreign_keys=[driver_id])
@@ -121,6 +240,8 @@ class VehicleMileageRecord(db.Model):
             'odometer_km': self.odometer_km,
             'distance_since_last_km': self.distance_since_last_km,
             'trip_reference': self.trip_reference,
+            'shipment_tracking_number': self.shipment_tracking_number,
+            'mileage_amount_issued_kes': self.mileage_amount_issued_kes,
             'notes': self.notes,
             'recorded_at': self.recorded_at.isoformat(),
         }
@@ -191,6 +312,8 @@ class VehicleBreakdown(db.Model):
     findings = db.Column(db.String(2000), nullable=True)
     action_taken = db.Column(db.String(2000), nullable=True)
     parts_used = db.Column(db.String(1000), nullable=True)
+    replacement_driver = db.Column(db.String(120), nullable=True)
+    mechanic_in_charge = db.Column(db.String(120), nullable=True)
     odometer_km = db.Column(db.Float, nullable=False)
     status = db.Column(db.String(20), nullable=False, default='OPEN')
     reported_at = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
@@ -211,6 +334,8 @@ class VehicleBreakdown(db.Model):
             'findings': self.findings,
             'action_taken': self.action_taken,
             'parts_used': self.parts_used,
+            'replacement_driver': self.replacement_driver,
+            'mechanic_in_charge': self.mechanic_in_charge,
             'odometer_km': self.odometer_km,
             'status': self.status,
             'reported_by': self.reported_by.display_name or self.reported_by.email,
@@ -276,6 +401,11 @@ def parse_number(value, label, minimum=0, maximum=100_000_000):
     return number
 
 
+def employee_required():
+    user = current_user()
+    return user if user and user.account_status == 'active' and user.role in EMPLOYEE_ROLES else None
+
+
 def get_vehicle(registration):
     if not isinstance(registration, str) or not registration.strip():
         return None
@@ -286,6 +416,58 @@ def vehicle_access(user, vehicle):
     return user.role in FLEET_MANAGER_ROLES | {'mechanic'} or (
         user.role == 'driver' and vehicle.assigned_driver_id == user.id
     )
+
+
+@fleet_bp.get('/directory')
+@jwt_required()
+def vehicle_directory():
+    if not employee_required():
+        return jsonify({'status': 'error', 'message': 'Fleet directory is available to employees only.'}), 403
+    vehicles = FleetVehicle.query.order_by(FleetVehicle.registration).all()
+    return jsonify({'status': 'success', 'vehicles': [{
+        'registration': vehicle.registration,
+        'truck_name': TRUCK_TYPES[vehicle.truck_type]['name'],
+        'status': vehicle.status,
+        'assigned_driver_name': (
+            vehicle.assigned_driver.display_name or vehicle.assigned_driver.driver_name
+            or vehicle.assigned_driver.email
+        ) if vehicle.assigned_driver else None,
+    } for vehicle in vehicles]}), 200
+
+
+@fleet_bp.get('/vehicles/<registration>/profile')
+@jwt_required()
+def vehicle_profile(registration):
+    if not employee_required():
+        return jsonify({'status': 'error', 'message': 'Vehicle profiles are available to employees only.'}), 403
+    vehicle = get_vehicle(registration)
+    if not vehicle:
+        return jsonify({'status': 'error', 'message': 'Vehicle was not found.'}), 404
+    driver = vehicle.assigned_driver
+    submissions = FleetVehicleCertificate.query.filter_by(vehicle_id=vehicle.id).order_by(
+        FleetVehicleCertificate.uploaded_at.desc(),
+    ).all()
+    return jsonify({
+        'status': 'success',
+        'vehicle': {
+            'registration': vehicle.registration,
+            'truck_type': vehicle.truck_type,
+            'truck_name': TRUCK_TYPES[vehicle.truck_type]['name'],
+            'make': vehicle.make,
+            'model': vehicle.model,
+            'capacity_tonnes': vehicle.capacity_tonnes,
+            'current_odometer_km': vehicle.current_odometer_km,
+            'status': vehicle.status,
+            'dispatch_eligible': bool(driver and not vehicle_dispatch_block_reason(driver)),
+        },
+        'driver': {
+            'name': driver.display_name or driver.driver_name or driver.email,
+            'driver_code': driver.driver_code,
+            'phone': driver.phone,
+        } if driver else None,
+        'certificates': vehicle_certificate_status(vehicle),
+        'documents': [record.to_dict() for record in submissions],
+    }), 200
 
 
 @fleet_bp.get('/vehicles')
@@ -363,6 +545,175 @@ def create_vehicle():
     return jsonify({'status': 'success', 'vehicle': vehicle.to_dict()}), 201
 
 
+@fleet_bp.get('/dispatch-eligibility')
+@jwt_required()
+def dispatch_eligibility():
+    manager = manager_required()
+    if not manager:
+        return jsonify({'status': 'error', 'message': 'Fleet manager access is required.'}), 403
+    drivers = UserAccount.query.filter_by(
+        role='driver',
+        account_status='active',
+        employment_status='ACTIVE',
+    ).order_by(UserAccount.display_name, UserAccount.id).all()
+    eligible = []
+    blocked = []
+    for driver in drivers:
+        reason = vehicle_dispatch_block_reason(driver)
+        record = {
+            'driver_id': driver.id,
+            'driver_name': driver.display_name or driver.driver_name or driver.email,
+            'reason': reason,
+        }
+        (blocked if reason else eligible).append(record)
+    return jsonify({
+        'status': 'success',
+        'eligible_drivers': eligible,
+        'blocked_drivers': blocked,
+    }), 200
+
+
+@fleet_bp.route('/vehicles/<registration>/certificates', methods=['GET', 'POST'])
+@jwt_required()
+def vehicle_certificates(registration):
+    user = current_user()
+    vehicle = get_vehicle(registration)
+    if not user or user.account_status != 'active' or not vehicle or not (
+        user.role in FLEET_MANAGER_ROLES
+        or user.role == 'driver' and vehicle.assigned_driver_id == user.id
+    ):
+        return jsonify({'status': 'error', 'message': 'Vehicle certificates are not available for this account.'}), 404
+
+    if request.method == 'GET':
+        records = FleetVehicleCertificate.query.filter_by(
+            vehicle_id=vehicle.id,
+        ).order_by(
+            FleetVehicleCertificate.uploaded_at.desc(),
+        ).all()
+        return jsonify({
+            'status': 'success',
+            'certificates': vehicle_certificate_status(vehicle),
+            'submissions': [record.to_dict() for record in records],
+            'dispatch_eligible': not vehicle_dispatch_block_reason(vehicle.assigned_driver)
+            if vehicle.assigned_driver else False,
+        }), 200
+
+    if user.role not in FLEET_MANAGER_ROLES | {'driver'}:
+        return jsonify({'status': 'error', 'message': 'Only the assigned driver or Fleet Admin may upload renewals.'}), 403
+    certificate_type = request.form.get('certificate_type')
+    if certificate_type not in CERTIFICATE_TYPES:
+        return jsonify({'status': 'error', 'message': 'Choose Insurance, Inspection, or Speed Governor.'}), 400
+    expiry_text = request.form.get('expires_on', '')
+    try:
+        expires_on = date.fromisoformat(expiry_text)
+    except (TypeError, ValueError):
+        return jsonify({'status': 'error', 'message': 'Enter the certificate expiry date as YYYY-MM-DD.'}), 400
+    if expires_on <= date.today():
+        return jsonify({'status': 'error', 'message': 'Renewal certificates must expire in the future.'}), 400
+    uploaded = request.files.get('document')
+    if not uploaded or not uploaded.filename:
+        return jsonify({'status': 'error', 'message': 'Photograph the renewed certificate before submitting it.'}), 400
+    contents = uploaded.read(CERTIFICATE_IMAGE_MAX_BYTES + 1)
+    if not contents or len(contents) > CERTIFICATE_IMAGE_MAX_BYTES:
+        return jsonify({'status': 'error', 'message': 'Certificate photos must be between 1 byte and 12 MB.'}), 400
+    try:
+        with Image.open(io.BytesIO(contents)) as image:
+            image.verify()
+        with Image.open(io.BytesIO(contents)) as image:
+            image.load()
+            normalized = io.BytesIO()
+            image.convert('RGB').save(normalized, format='JPEG', quality=90, optimize=True)
+            photo = normalized.getvalue()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        return jsonify({'status': 'error', 'message': 'Upload a valid JPEG, PNG, or WebP certificate photo.'}), 422
+    certificate = FleetVehicleCertificate(
+        vehicle_id=vehicle.id,
+        certificate_type=certificate_type,
+        expires_on=expires_on,
+        filename=(secure_filename(uploaded.filename) or 'certificate-renewal.jpg')[:255],
+        contents=photo,
+        sha256=hashlib.sha256(photo).hexdigest(),
+        status='PENDING',
+        uploaded_by_id=user.id,
+    )
+    db.session.add(certificate)
+    db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'message': 'Renewal submitted for Fleet Admin review. The current vehicle block remains until approval.',
+        'certificate': certificate.to_dict(),
+    }), 201
+
+
+@fleet_bp.get('/certificates/pending')
+@jwt_required()
+def list_pending_certificates():
+    manager = manager_required()
+    if not manager:
+        return jsonify({'status': 'error', 'message': 'Fleet manager access is required.'}), 403
+    certificates = FleetVehicleCertificate.query.filter_by(status='PENDING').order_by(
+        FleetVehicleCertificate.uploaded_at,
+    ).all()
+    return jsonify({
+        'status': 'success',
+        'certificates': [certificate.to_dict() for certificate in certificates],
+    }), 200
+
+
+@fleet_bp.get('/certificates/<int:certificate_id>/document')
+@jwt_required()
+def download_vehicle_certificate(certificate_id):
+    user = current_user()
+    certificate = db.session.get(FleetVehicleCertificate, certificate_id)
+    if not user or user.account_status != 'active' or not certificate or user.role not in EMPLOYEE_ROLES:
+        return jsonify({'status': 'error', 'message': 'Certificate document was not found for this account.'}), 404
+    if not hmac.compare_digest(hashlib.sha256(certificate.contents).hexdigest(), certificate.sha256):
+        current_app.logger.error('SHA-256 validation failed for fleet certificate %s', certificate.id)
+        return jsonify({'status': 'error', 'message': 'Certificate failed integrity verification.'}), 500
+    response = send_file(
+        io.BytesIO(certificate.contents),
+        mimetype='image/jpeg',
+        as_attachment=True,
+        download_name=certificate.filename,
+        max_age=0,
+    )
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Content-Security-Policy'] = "sandbox; default-src 'none'"
+    return response
+
+
+@fleet_bp.patch('/certificates/<int:certificate_id>/review')
+@jwt_required()
+def review_vehicle_certificate(certificate_id):
+    manager = manager_required()
+    if not manager:
+        return jsonify({'status': 'error', 'message': 'Fleet manager access is required.'}), 403
+    certificate = db.session.get(FleetVehicleCertificate, certificate_id)
+    if not certificate or certificate.status != 'PENDING':
+        return jsonify({'status': 'error', 'message': 'Pending certificate submission was not found.'}), 404
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or data.get('decision') not in {'APPROVED', 'REJECTED'}:
+        return jsonify({'status': 'error', 'message': 'Choose Approve or Reject for this renewal.'}), 400
+    note = data.get('note', '')
+    if not isinstance(note, str) or len(note) > 500:
+        return jsonify({'status': 'error', 'message': 'Review notes must be at most 500 characters.'}), 400
+    if data['decision'] == 'APPROVED' and certificate.expires_on <= date.today():
+        return jsonify({'status': 'error', 'message': 'An expired certificate cannot be approved as a renewal.'}), 409
+    certificate.status = data['decision']
+    certificate.reviewed_by_id = manager.id
+    certificate.reviewed_at = datetime.now(timezone.utc)
+    certificate.review_note = note.strip() or None
+    db.session.commit()
+    return jsonify({
+        'status': 'success',
+        'message': 'Renewal approved. The vehicle block was recalculated.' if certificate.status == 'APPROVED'
+        else 'Renewal rejected. The current vehicle block remains in place.',
+        'certificate': certificate.to_dict(),
+        'vehicle': certificate.vehicle.to_dict(),
+    }), 200
+
+
 @fleet_bp.post('/vehicles/<registration>/mileage')
 @jwt_required()
 def record_mileage(registration):
@@ -379,11 +730,27 @@ def record_mileage(registration):
     if not driver or driver.role != 'driver' or driver.account_status != 'active':
         return jsonify({'status': 'error', 'message': 'Select an active driver to record the mileage.'}), 400
     try:
-        odometer = parse_number(data.get('odometer_km'), 'Odometer')
+        if data.get('trip_distance_km') not in (None, ''):
+            trip_distance = parse_number(data.get('trip_distance_km'), 'Trip mileage')
+        else:
+            trip_distance = parse_number(data.get('odometer_km'), 'Odometer') - vehicle.current_odometer_km
     except ValueError as error:
         return jsonify({'status': 'error', 'message': str(error)}), 400
-    if odometer < vehicle.current_odometer_km:
-        return jsonify({'status': 'error', 'message': 'Odometer readings cannot be lower than the last recorded reading.'}), 409
+    if trip_distance <= 0:
+        return jsonify({'status': 'error', 'message': 'Trip mileage must be greater than zero.'}), 400
+    odometer = vehicle.current_odometer_km + trip_distance
+
+    from backend.routes.shipments import Shipment
+    tracking = data.get('shipment_tracking_number')
+    shipment = db.session.get(Shipment, tracking.strip()) if isinstance(tracking, str) and tracking.strip() else None
+    if not shipment:
+        return jsonify({'status': 'error', 'message': 'Select the shipment this trip delivered.'}), 400
+    if user.role == 'driver' and shipment.assigned_driver_id != user.id:
+        return jsonify({'status': 'error', 'message': 'This shipment is not assigned to you.'}), 403
+    try:
+        amount_issued = parse_number(data.get('mileage_amount_issued_kes', 0), 'Mileage amount issued')
+    except ValueError as error:
+        return jsonify({'status': 'error', 'message': str(error)}), 400
 
     turnman = data.get('turnman_name', '')
     trip_reference = data.get('trip_reference', '')
@@ -398,8 +765,10 @@ def record_mileage(registration):
         driver_id=driver.id,
         turnman_name=turnman.strip() or None,
         odometer_km=odometer,
-        distance_since_last_km=odometer - vehicle.current_odometer_km,
-        trip_reference=trip_reference.strip() or None,
+        distance_since_last_km=trip_distance,
+        trip_reference=shipment.tracking_number,
+        shipment_tracking_number=shipment.tracking_number,
+        mileage_amount_issued_kes=amount_issued,
         notes=notes.strip() or None,
     )
     vehicle.current_odometer_km = odometer
@@ -607,6 +976,8 @@ def report_breakdown(registration):
         'findings': (data.get('findings', ''), 2000),
         'action_taken': (data.get('action_taken', ''), 2000),
         'parts_used': (data.get('parts_used', ''), 1000),
+        'replacement_driver': (data.get('replacement_driver', ''), 120),
+        'mechanic_in_charge': (data.get('mechanic_in_charge', ''), 120),
     }
     description = data.get('description', '')
     if severity not in BREAKDOWN_SEVERITIES:
@@ -646,6 +1017,8 @@ def report_breakdown(registration):
         findings=text_fields['findings'][0].strip() or None,
         action_taken=text_fields['action_taken'][0].strip() or None,
         parts_used=text_fields['parts_used'][0].strip() or None,
+        replacement_driver=text_fields['replacement_driver'][0].strip() or None,
+        mechanic_in_charge=text_fields['mechanic_in_charge'][0].strip() or None,
         odometer_km=odometer,
     )
     vehicle.status = 'BREAKDOWN'

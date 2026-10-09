@@ -65,6 +65,11 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.classList.add('active');
             const activePanel = document.getElementById(tabId);
             if (activePanel) activePanel.classList.add('active');
+
+            const app = window.DifanApp;
+            if (app && app.savePreference && !app.state.restoringPreferences) {
+                app.savePreference({ sub_tabs: { [group]: tabId } });
+            }
         });
     });
 

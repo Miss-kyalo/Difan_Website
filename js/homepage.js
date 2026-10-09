@@ -30,7 +30,7 @@ export default function Homepage({ user = {}, onNavigate = () => {} }) {
       return;
     }
 
-    fetch('http://localhost:5000/api/shipments/track/DL-8801')
+    fetch(window.DifanApp.apiUrl('/api/shipments/track/DL-8801'))
       .then((res) => res.json())
       .then((data) => {
         if (data && data.status === 'success') {

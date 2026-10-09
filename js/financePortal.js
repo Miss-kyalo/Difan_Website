@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const bulkControls = document.getElementById('finance-bulk-controls');
   const selectAll = document.getElementById('finance-select-all');
   const bulkMarkPaid = document.getElementById('finance-bulk-mark-paid');
+  const statementForm = document.getElementById('finance-statement-form');
+  const statementMonth = document.getElementById('finance-statement-month');
   if (!financeView || !financeNavigation || !deliveryList || !statusMessage) return;
 
   const summaryFields = {
@@ -25,8 +27,40 @@ document.addEventListener('DOMContentLoaded', () => {
     return { Authorization: 'Bearer ' + token };
   }
 
+  if (statementMonth) {
+    const now = new Date();
+    statementMonth.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  statementForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!statementMonth?.value) return;
+    statusMessage.textContent = 'Preparing the monthly statement...';
+    try {
+      const response = await fetch(
+        window.DifanApp.apiUrl(`/api/portal/delivery-finance/monthly-statement?month=${encodeURIComponent(statementMonth.value)}`),
+        { headers: tokenHeaders() },
+      );
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'The monthly statement could not be prepared.');
+      }
+      const statement = URL.createObjectURL(await response.blob());
+      const download = document.createElement('a');
+      download.href = statement;
+      download.download = `delivery-statement-${statementMonth.value}.pdf`;
+      document.body.appendChild(download);
+      download.click();
+      download.remove();
+      URL.revokeObjectURL(statement);
+      statusMessage.textContent = 'Monthly statement downloaded.';
+    } catch (error) {
+      statusMessage.textContent = error.message || 'Unable to download the monthly statement.';
+    }
+  });
+
   async function apiRequest(path, options = {}) {
-    const response = await fetch(`http://localhost:5000${path}`, {
+    const response = await fetch(window.DifanApp.apiUrl(path), {
       ...options,
       headers: {
         ...tokenHeaders(),
@@ -81,10 +115,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const markPaidInput = document.createElement('input');
     markPaidInput.type = 'checkbox';
     markPaidInput.setAttribute('aria-label', `Mark ${delivery.tracking_number} fully paid`);
+    markPaidInput.checked = delivery.payment_status === 'paid';
     markPaidLabel.append(markPaidInput, document.createTextNode('Mark fully paid'));
 
+    paidInput.disabled = markPaidInput.checked;
     markPaidInput.addEventListener('change', () => {
       if (markPaidInput.checked) paidInput.value = invoiceInput.value;
+      else paidInput.value = '0';
       paidInput.disabled = markPaidInput.checked;
     });
     invoiceInput.addEventListener('input', () => {

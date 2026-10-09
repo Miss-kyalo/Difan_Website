@@ -26,10 +26,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (!nav || !lockoutPanel || !pendingList || !signatureCanvas || !emergencyForm) return;
 
-  const apiRoot = 'http://localhost:5000';
+  const apiRoot = window.DifanApp.apiBase;
   const employeeRoles = new Set(['driver', 'mechanic', 'accountant', 'admin', 'hr', 'boss']);
   const hrRoles = new Set(['hr', 'boss']);
   let pendingTasks = [];
+  let deferablePayPeriods = [];
   let selectedTask = null;
   let hasInk = false;
   let ratingShipment = null;
@@ -163,7 +164,10 @@ document.addEventListener('DOMContentLoaded', () => {
     lockoutPanel.hidden = !enabled;
     if (enabled) {
       const link = document.querySelector('[data-target-tab="workforce"]');
-      if (link && window.DifanApp.state.activeTab !== 'workforce') link.click();
+      if (link && (
+        window.DifanApp.state.activeTab !== 'workforce'
+        || !link.classList.contains('active')
+      )) link.click();
     }
   }
 
@@ -182,6 +186,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const text = task.kind === 'payroll'
       ? [
         `Pay period: ${task.record.pay_period}`,
+        `Basic salary: ${window.DifanApp.formatCurrency(task.record.basic_pay)}`,
+        `Housing allowance: ${window.DifanApp.formatCurrency(task.record.housing_allowance || 0)}`,
+        `Off-duty pay (${task.record.off_duty_days || 0} day(s)): ${window.DifanApp.formatCurrency(task.record.off_duty_pay || 0)}`,
         `Gross salary: ${window.DifanApp.formatCurrency(task.record.gross_pay)}`,
         `Standard payroll deductions: ${window.DifanApp.formatCurrency(task.record.deductions)}`,
         `NSSF: ${task.record.nssf_deduction == null ? 'Not entered' : window.DifanApp.formatCurrency(task.record.nssf_deduction)}`,
@@ -249,6 +256,26 @@ document.addEventListener('DOMContentLoaded', () => {
       review.type = 'button';
       review.addEventListener('click', () => selectTask(task));
       article.appendChild(review);
+      if (task.kind === 'payroll' && deferablePayPeriods.includes(task.record.pay_period)) {
+        const defer = node('button', 'Defer Sign-Off by 12 Hours', 'btn btn-secondary');
+        defer.type = 'button';
+        defer.addEventListener('click', async () => {
+          defer.disabled = true;
+          try {
+            const result = await apiRequest('/api/portal/workforce/payroll-signoff-deferral', {
+              method: 'POST',
+              body: JSON.stringify({ pay_period: task.record.pay_period }),
+            });
+            document.getElementById('workforce-signoff-deferral-status').textContent = result.message;
+            window.DifanApp.showToast(result.message, 'success');
+            await refreshSessionData();
+          } catch (error) {
+            window.DifanApp.showToast(error.message || 'Paystub sign-off could not be deferred.', 'error');
+            defer.disabled = false;
+          }
+        });
+        article.appendChild(defer);
+      }
       pendingList.appendChild(article);
     });
     if (!selectedTask || !pendingTasks.includes(selectedTask)) selectTask(pendingTasks[0]);
@@ -281,6 +308,46 @@ document.addEventListener('DOMContentLoaded', () => {
         );
       });
       article.appendChild(payslipDownload);
+      if (record.dispute_deadline_at) {
+        article.appendChild(node(
+          'p',
+          `Paystub contest deadline: ${new Date(record.dispute_deadline_at).toLocaleString()}. Submit a written dispute at least 48 hours before month-end salary release.`,
+          'muted',
+        ));
+      }
+      if (record.dispute_status) {
+        article.appendChild(node(
+          'p',
+          `Dispute ${record.dispute_status.toLowerCase()}: ${record.dispute_message}`,
+        ));
+      } else if (record.dispute_window_open && record.status === 'APPROVED') {
+        const disputeForm = node('form', undefined, 'workflow-form');
+        const disputeText = node('textarea');
+        disputeText.maxLength = 2000;
+        disputeText.required = true;
+        disputeText.rows = 3;
+        disputeText.placeholder = 'Explain what you are contesting (up to 2,000 characters).';
+        disputeText.setAttribute('aria-label', `Contest paystub for ${record.pay_period}`);
+        const disputeSubmit = node('button', 'Submit paystub contest', 'btn btn-secondary');
+        disputeSubmit.type = 'submit';
+        disputeForm.append(disputeText, disputeSubmit);
+        disputeForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          disputeSubmit.disabled = true;
+          try {
+            const response = await apiRequest(`/api/portal/payroll/${record.id}/dispute`, {
+              method: 'POST',
+              body: JSON.stringify({ message: disputeText.value.trim() }),
+            });
+            window.DifanApp.showToast(response.message);
+            await refreshSessionData();
+          } catch (error) {
+            window.DifanApp.showToast(error.message || 'The paystub contest could not be submitted.', 'error');
+            disputeSubmit.disabled = false;
+          }
+        });
+        article.appendChild(disputeForm);
+      }
       if (record.signed_pdf_sha256) {
         const download = node('a', 'Download signed immutable PDF');
         download.href = `${apiRoot}/api/portal/payroll/${record.id}/signed-document`;
@@ -322,6 +389,12 @@ document.addEventListener('DOMContentLoaded', () => {
         'p',
         `Deductions: ${window.DifanApp.formatCurrency(record.deductions)} · Salary Advance / Early Cashout: ${window.DifanApp.formatCurrency(record.salary_advance)} · Net: ${window.DifanApp.formatCurrency(record.net_pay)}`,
       ));
+      if (record.dispute_status) {
+        article.appendChild(node(
+          'p',
+          `Employee paystub contest (${record.dispute_submitted_at || 'time unavailable'}): ${record.dispute_message}`,
+        ));
+      }
       const adminPayslipDownload = node('button', 'Download payslip PDF', 'btn btn-secondary');
       adminPayslipDownload.type = 'button';
       adminPayslipDownload.addEventListener('click', () => {
@@ -539,6 +612,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function loadDistributionCenterDelays() {
+    const rows = document.getElementById('workforce-distribution-delay-rows');
+    const status = document.getElementById('workforce-distribution-delay-status');
+    if (!rows || !status) return;
+    rows.replaceChildren();
+    try {
+      const data = await apiRequest('/api/portal/workforce/distribution-center-delays');
+      if (!data.facilities.length) {
+        status.textContent = 'No completed pickup geofence visits have been recorded yet.';
+        return;
+      }
+      status.textContent = 'Delay values use actual pickup-hub arrival and departure events; transit time is not counted as warehouse delay.';
+      data.facilities.forEach((facility) => {
+        const row = document.createElement('tr');
+        [
+          facility.facility_name,
+          String(facility.completed_visits),
+          String(facility.open_visits),
+          facility.average_delay_hours.toFixed(2),
+          facility.longest_delay_hours.toFixed(2),
+          facility.current_open_delay_hours.toFixed(2),
+          window.DifanApp.formatCurrency(facility.detention_charges_kes),
+        ].forEach((value) => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.appendChild(cell);
+        });
+        rows.appendChild(row);
+      });
+    } catch (error) {
+      status.textContent = error.message || 'Distribution-center delay data could not be loaded.';
+    }
+  }
+
   async function loadDriverClientRatingOptions() {
     const panel = driverClientRatingPanel;
     const select = document.getElementById('workforce-driver-client-shipment');
@@ -568,15 +675,32 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadHrDashboard() {
     if (!hrRoles.has(currentUser()?.role)) return;
     const statusList = document.getElementById('workforce-driver-status-list');
+    const availabilityCounts = document.getElementById('workforce-driver-availability-counts');
     const caseList = document.getElementById('workforce-case-list');
     const emergencyList = document.getElementById('workforce-emergency-list');
     try {
-      const data = await apiRequest('/api/portal/workforce/hr-dashboard');
+      const [data] = await Promise.all([
+        apiRequest('/api/portal/workforce/hr-dashboard'),
+        loadDistributionCenterDelays(),
+      ]);
       const driverSelect = document.getElementById('workforce-case-driver');
       const payrollEmployee = document.getElementById('workforce-payroll-employee');
       statusList.replaceChildren();
+      availabilityCounts.replaceChildren();
       caseList.replaceChildren();
       emergencyList.replaceChildren();
+      [
+        ['ACTIVE', 'Active'],
+        ['ON_LEAVE', 'On Leave'],
+        ['SUSPENDED', 'Suspended'],
+        ['OFF_DUTY', 'Off-Duty'],
+      ].forEach(([status, label]) => {
+        availabilityCounts.appendChild(node(
+          'p',
+          `${label}: ${data.availability_counts[status] || 0}`,
+          'workflow-card',
+        ));
+      });
       driverSelect.replaceChildren();
       const blank = new Option('Select driver', '');
       driverSelect.appendChild(blank);
@@ -584,7 +708,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const option = new Option(`${driver.name} (${driver.driver_id})`, driver.id);
         driverSelect.appendChild(option);
         const card = node('article', undefined, 'workflow-card');
-        card.appendChild(node('h3', `${driver.name} · ${driver.driver_id}`));
+        card.appendChild(node('h3', `#${driver.rank} · ${driver.name} · ${driver.driver_id}`));
         card.appendChild(node(
           'p',
           `${driver.employment_status}${driver.leave_type ? ` (${driver.leave_type})` : ''} · score ${driver.score.score}`,
@@ -633,6 +757,9 @@ document.addEventListener('DOMContentLoaded', () => {
       for (const item of data.cases) {
         const card = node('article', undefined, 'workflow-card');
         card.appendChild(node('h3', `${item.employee_name} · ${item.case_type.replaceAll('_', ' ')}`));
+        if (item.automated) {
+          card.appendChild(node('p', `Automatically triggered: ${item.source_code.replaceAll('_', ' ')}`));
+        }
         card.appendChild(node('p', `${item.severity.replaceAll('_', ' ')} · ${item.severity_points} points · ${item.status}`));
         card.appendChild(node('p', item.details));
         card.appendChild(node('p', `Dispute deadline: ${new Date(item.dispute_deadline_at).toLocaleString()}`));
@@ -663,11 +790,31 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (!data.cases.length) caseList.appendChild(node('p', 'No HR records have been issued.'));
       data.emergencies.forEach((report) => {
-        emergencyList.appendChild(node(
-          'article',
+        const card = node('article', undefined, 'workflow-card');
+        card.appendChild(node(
+          'p',
           `${report.reference} · ${report.report_type.replaceAll('_', ' ')} · ${report.employee_name} · ${report.location} · ${report.description}`,
-          'workflow-card',
         ));
+        card.appendChild(node('p', report.is_open ? 'Emergency status: Open' : 'Emergency status: Closed'));
+        if (report.is_open) {
+          const close = node('button', 'Close resolved emergency', 'btn btn-secondary');
+          close.type = 'button';
+          close.addEventListener('click', async () => {
+            close.disabled = true;
+            try {
+              await apiRequest(`/api/portal/workforce/emergency/${report.id}/resolve`, {
+                method: 'PATCH',
+                body: JSON.stringify({}),
+              });
+              await loadHrDashboard();
+            } catch (error) {
+              window.DifanApp.showToast(error.message || 'The emergency could not be closed.', 'error');
+              close.disabled = false;
+            }
+          });
+          card.appendChild(close);
+        }
+        emergencyList.appendChild(card);
       });
       if (!data.emergencies.length) emergencyList.appendChild(node('p', 'No safety reports have been submitted.'));
       await loadClientLeaderboard();
@@ -731,6 +878,9 @@ document.addEventListener('DOMContentLoaded', () => {
       for (const item of data.cases) {
         const card = node('article', undefined, 'workflow-card');
         card.appendChild(node('h3', `${item.case_type.replaceAll('_', ' ')} · ${item.severity.replaceAll('_', ' ')}`));
+        if (item.automated) {
+          card.appendChild(node('p', `Automatically triggered: ${item.source_code.replaceAll('_', ' ')}`));
+        }
         card.appendChild(node('p', item.details));
         card.appendChild(node('p', `Status: ${item.status}. Rebuttal deadline: ${new Date(item.dispute_deadline_at).toLocaleString()}`));
         item.evidence.forEach((file) => addEvidenceLink(card, file));
@@ -801,14 +951,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  const payrollAuto = document.getElementById('workforce-payroll-auto');
+  function syncPayrollAuto() {
+    payrollForm.querySelectorAll('[data-manual-statutory]').forEach((field) => {
+      field.hidden = payrollAuto.checked;
+      field.querySelector('input').disabled = payrollAuto.checked;
+    });
+  }
+  payrollAuto?.addEventListener('change', syncPayrollAuto);
+  if (payrollAuto) syncPayrollAuto();
+
   payrollForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const submit = payrollForm.querySelector('button[type="submit"]');
     submit.disabled = true;
+    const numberOrNull = (id) => {
+      const value = document.getElementById(id).value;
+      return value === '' ? null : Number(value);
+    };
+    const manual = payrollAuto.checked ? {} : {
+      nssf_deduction: Number(document.getElementById('workforce-payroll-nssf').value),
+      shif_deduction: Number(document.getElementById('workforce-payroll-shif').value),
+      housing_levy_deduction: Number(document.getElementById('workforce-payroll-housing').value),
+      taxable_pay: Number(document.getElementById('workforce-payroll-taxable').value),
+      tax_charged: Number(document.getElementById('workforce-payroll-tax-charged').value),
+      personal_relief: Number(document.getElementById('workforce-payroll-personal-relief').value),
+      other_reliefs: Number(document.getElementById('workforce-payroll-other-reliefs').value),
+      paye_tax: Number(document.getElementById('workforce-payroll-paye').value),
+    };
     try {
       await apiRequest('/api/portal/payroll', {
         method: 'POST',
         body: JSON.stringify({
+          ...manual,
+          auto_calculate: payrollAuto.checked,
+          housing_allowance: numberOrNull('workforce-payroll-housing-allowance'),
+          off_duty_days: Number(document.getElementById('workforce-payroll-offduty-days').value || 0),
+          off_duty_pay: numberOrNull('workforce-payroll-offduty-pay'),
           employee_id: Number(document.getElementById('workforce-payroll-employee').value),
           pay_period: document.getElementById('workforce-payroll-period').value.trim(),
           basic_pay: Number(document.getElementById('workforce-payroll-basic').value),
@@ -816,17 +995,14 @@ document.addEventListener('DOMContentLoaded', () => {
           bonus: Number(document.getElementById('workforce-payroll-bonus').value),
           deductions: Number(document.getElementById('workforce-payroll-deductions').value),
           salary_advance: Number(document.getElementById('workforce-payroll-advance').value),
-          nssf_deduction: Number(document.getElementById('workforce-payroll-nssf').value),
-          shif_deduction: Number(document.getElementById('workforce-payroll-shif').value),
-          housing_levy_deduction: Number(document.getElementById('workforce-payroll-housing').value),
-          taxable_pay: Number(document.getElementById('workforce-payroll-taxable').value),
-          tax_charged: Number(document.getElementById('workforce-payroll-tax-charged').value),
-          personal_relief: Number(document.getElementById('workforce-payroll-personal-relief').value),
-          other_reliefs: Number(document.getElementById('workforce-payroll-other-reliefs').value),
-          paye_tax: Number(document.getElementById('workforce-payroll-paye').value),
         }),
       });
       payrollForm.reset();
+      syncPayrollAuto();
+      window.DifanApp.showToast(
+        'Paystub created as pending approval. Approve and publish it before the employee can sign it.',
+        'success',
+      );
       await refreshSessionData();
     } catch (error) {
       window.DifanApp.showToast(error.message, 'error');
@@ -914,6 +1090,15 @@ document.addEventListener('DOMContentLoaded', () => {
         ...pending.pending_slips.map((record) => ({ kind: 'payroll', record })),
         ...pending.pending_notices.map((record) => ({ kind: 'notice', record })),
       ];
+      deferablePayPeriods = pending.can_defer_signoff
+        ? pending.pending_slips.map((record) => record.pay_period)
+        : [];
+      const deferralStatus = document.getElementById('workforce-signoff-deferral-status');
+      deferralStatus.textContent = pending.deferred_slips.length
+        ? `Sign-off deferred until ${pending.deferred_slips.map((item) =>
+          `${item.pay_period}: ${new Date(item.expires_at).toLocaleString()}`
+        ).join(' · ')}.`
+        : '';
       renderPendingTasks();
       renderPayroll(payroll.slips, user.id, hrRoles.has(user.role));
       if (!pending.must_acknowledge) {
@@ -957,26 +1142,31 @@ document.addEventListener('DOMContentLoaded', () => {
     status.textContent = 'Checking whether this delivery has already been rated...';
     apiRequest(`/api/portal/workforce/shipments/${encodeURIComponent(shipment.tracking_number)}/rating`)
       .then((data) => {
-        const stars = document.getElementById('client-rating-stars');
+        const punctuality = document.getElementById('client-rating-punctuality');
+        const cargoCare = document.getElementById('client-rating-cargo-care');
         const feedback = document.getElementById('client-rating-feedback');
         if (data.rating) {
-          stars.value = String(data.rating.stars);
+          punctuality.value = String(data.rating.punctuality_stars);
+          cargoCare.value = String(data.rating.cargo_care_stars);
           feedback.value = data.rating.feedback || '';
-          stars.disabled = true;
+          punctuality.disabled = true;
+          cargoCare.disabled = true;
           feedback.disabled = true;
           submit.disabled = true;
           status.textContent = 'Thank you. This delivery has already been rated.';
         } else {
-          stars.disabled = false;
+          punctuality.disabled = false;
+          cargoCare.disabled = false;
           feedback.disabled = false;
           submit.disabled = !data.can_rate;
           if (data.already_rated) {
-            stars.disabled = true;
+            punctuality.disabled = true;
+            cargoCare.disabled = true;
             feedback.disabled = true;
             status.textContent = 'This delivery has already received its one customer rating.';
           } else {
             status.textContent = data.can_rate
-              ? 'Rate your delivery from 1 to 5 stars and optionally leave feedback.'
+              ? 'Rate delivery punctuality and cargo care from 1 to 5 stars; feedback is optional.'
               : 'Ratings become available after the signed proof of delivery is recorded.';
           }
         }
@@ -993,7 +1183,8 @@ document.addEventListener('DOMContentLoaded', () => {
       await apiRequest(`/api/portal/workforce/shipments/${encodeURIComponent(ratingShipment.tracking_number)}/rating`, {
         method: 'POST',
         body: JSON.stringify({
-          stars: Number(document.getElementById('client-rating-stars').value),
+          punctuality_stars: Number(document.getElementById('client-rating-punctuality').value),
+          cargo_care_stars: Number(document.getElementById('client-rating-cargo-care').value),
           feedback: document.getElementById('client-rating-feedback').value.trim(),
         }),
       });

@@ -15,6 +15,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const employeeNavigation = document.getElementById('employees-navigation');
   const onboardingNavigation = document.getElementById('onboarding-navigation');
   const onboardingView = document.getElementById('view-onboarding');
+  const onboardedAccountsPanel = document.getElementById('onboarded-accounts-panel');
+  const onboardedAccountsList = document.getElementById('onboarded-accounts-list');
+  const onboardedAccountsStatus = document.getElementById('onboarded-accounts-status');
   const enquiriesPanel = document.getElementById('transport-enquiries-panel');
   const enquiriesList = document.getElementById('transport-enquiries-list');
   const enquiriesStatus = document.getElementById('transport-enquiries-status');
@@ -29,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function apiRequest(path, options = {}) {
-    const response = await fetch(`http://localhost:5000${path}`, {
+    const response = await fetch(window.DifanApp.apiUrl(path), {
       ...options,
       headers: {
         Authorization: `Bearer ${getToken()}`,
@@ -173,19 +176,57 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function loadOnboardedAccounts() {
+    if (!onboardedAccountsList || !onboardedAccountsStatus) return;
+    onboardedAccountsList.replaceChildren();
+    onboardedAccountsStatus.textContent = 'Loading onboarded accounts...';
+    try {
+      const data = await apiRequest('/api/auth/users');
+      const accounts = data.users.filter((account) =>
+        account.role === 'client'
+        || ['driver', 'mechanic', 'accountant', 'admin', 'hr', 'boss'].includes(account.role),
+      );
+      if (!accounts.length) {
+        onboardedAccountsStatus.textContent = 'No onboarded accounts are available.';
+        return;
+      }
+      onboardedAccountsStatus.textContent = `${accounts.length} onboarded client and employee account${accounts.length === 1 ? '' : 's'}.`;
+      accounts.forEach((account) => {
+        const card = document.createElement('article');
+        card.className = 'workflow-record';
+        const heading = document.createElement('h3');
+        heading.textContent = `${account.display_name || account.company_name || account.email} · ${account.role}`;
+        const details = document.createElement('p');
+        details.textContent = `${account.email} · ${account.company_name} · ${account.account_status}`;
+        card.append(heading, details);
+        onboardedAccountsList.appendChild(card);
+      });
+    } catch (error) {
+      onboardedAccountsStatus.textContent = error.message || 'Unable to load onboarded accounts.';
+    }
+  }
+
   async function refreshEmployeeTools() {
     const role = window.DifanApp?.state?.currentUser?.role;
     const isAdminOrHr = adminRoles.has(role);
     const canOnboard = ['hr', 'boss'].includes(role);
     approvalPanel.hidden = !isAdminOrHr;
     onboardingPanel.hidden = !canOnboard;
+    if (onboardedAccountsPanel) onboardedAccountsPanel.hidden = !canOnboard;
+    const rolePanel = document.getElementById('account-role-panel');
+    if (rolePanel) rolePanel.hidden = !canOnboard;
     if (enquiriesPanel) enquiriesPanel.hidden = !isAdminOrHr;
     if (onboardingNavigation) onboardingNavigation.hidden = !canOnboard;
     if (onboardingView) onboardingView.hidden = !canOnboard;
     ratePanel.hidden = !isAdminOrHr;
+    const rateNav = document.getElementById('ratesheets-navigation');
+    const rateView = document.getElementById('view-ratesheets');
+    if (rateNav) rateNav.hidden = !isAdminOrHr;
+    if (rateView && !isAdminOrHr) rateView.hidden = true;
     if (employeeNavigation) employeeNavigation.hidden = !role || role === 'client';
     if (!isAdminOrHr) return;
-    await Promise.all([loadRegistrations(), loadContainerRates(), loadTransportEnquiries()]);
+    await loadRegistrations();
+    if (canOnboard) await loadOnboardedAccounts();
   }
 
   function updateOnboardingFields() {
@@ -209,11 +250,13 @@ document.addEventListener('DOMContentLoaded', () => {
           company_name: document.getElementById('onboarding-company').value.trim(),
           email: document.getElementById('onboarding-email').value.trim(),
           display_name: onboardingName.value.trim(),
+          phone: document.getElementById('onboarding-phone').value.trim(),
         }),
       });
       onboardingStatus.textContent = data.message;
       onboardingForm.reset();
       updateOnboardingFields();
+      await loadOnboardedAccounts();
     } catch (error) {
       onboardingStatus.textContent = error.message || 'Unable to create the onboarding account.';
     } finally {
@@ -223,9 +266,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   refreshButton.addEventListener('click', loadRegistrations);
   document.getElementById('refresh-transport-enquiries')?.addEventListener('click', loadTransportEnquiries);
-  document.querySelector('[data-target-tab="employees"]')?.addEventListener('click', () => {
+  document.getElementById('refresh-onboarded-accounts')?.addEventListener('click', loadOnboardedAccounts);
+  document.querySelector('[data-target-tab="booking"]')?.addEventListener('click', () => {
     if (adminRoles.has(window.DifanApp?.state?.currentUser?.role)) {
-      loadRegistrations();
+      loadTransportEnquiries();
       loadContainerRates();
     }
   });
